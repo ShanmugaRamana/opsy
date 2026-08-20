@@ -28,3 +28,7 @@ target/
 src-tauri/target/
 opsy-backend.log
 
+# User Data cache profiles
+user_data.json
+backend/user_data.json
+
