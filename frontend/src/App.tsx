@@ -8,6 +8,7 @@ import { ByokConfiguration } from './components/ByokConfiguration'
 import { OllamaSetup } from './components/OllamaSetup'
 import { SystemSpecification } from './components/SystemSpecification'
 import { Home } from './components/Home'
+import { Sidebar } from './components/layout/Sidebar'
 
 const API_BASE = 'http://localhost:8000'
 
@@ -46,6 +47,7 @@ function App() {
 
   const [submitting, setSubmitting] = useState<boolean>(false)
   const [errorMsg, setErrorMsg] = useState<string>('')
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
 
   // Real-time progress updates state
   const [installingStatus, setInstallingStatus] = useState<InstallingStatus | null>(null)
@@ -227,10 +229,6 @@ function App() {
     )
   }
 
-  if (activePage === 'home') {
-    return <Home />
-  }
-
   if (!onboarded) {
     return (
       <div id="center" className="flex flex-col min-h-screen bg-black text-zinc-300">
@@ -244,48 +242,61 @@ function App() {
   }
 
   return (
-    <div id="center" className="flex flex-col items-center min-h-screen bg-black text-zinc-300 py-6 pb-24 w-full">
-      {/* Main Pages Content */}
-      <div className="w-full flex justify-center">
-        {activePage === 'dashboard' ? (
-          <SystemSpecification
-            username={username}
-            systemSpecs={systemSpecs}
-            activeModel={activeModel}
-            apiKey={apiKey}
-            provider={provider}
-            onChangeConfig={() => setActivePage('recommendations')}
-          />
-        ) : activePage === 'recommendations' ? (
-          <LlmSuggestions
-            suggestions={suggestions}
-            onGoToByok={() => setActivePage('byok')}
-            onSelectModel={handleSelectModel}
-            hasApiKeyConfigured={!!apiKey}
-          />
-        ) : activePage === 'byok' ? (
-          <ByokConfiguration
-            initialApiKey={apiKey}
-            initialProvider={provider}
-            onBack={() => {
-              setActivePage('recommendations')
-            }}
-            onSave={handleSaveApiKey}
-          />
-        ) : (
-          selectedModel && (
-            <OllamaSetup
-              model={selectedModel}
-              allModels={suggestions}
+    <div className="flex h-screen w-full bg-black text-zinc-300 overflow-hidden">
+      {/* Navigation Sidebar */}
+      <Sidebar
+        activePage={activePage === 'ollama' ? 'recommendations' : activePage}
+        onNavigate={(page) => setActivePage(page)}
+        username={username}
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
+      />
+
+      {/* Content Canvas */}
+      <div className="flex-1 h-full overflow-y-auto flex flex-col items-center py-6 pb-24 px-4 w-full relative">
+        <div className="w-full flex justify-center">
+          {activePage === 'home' ? (
+            <Home />
+          ) : activePage === 'dashboard' ? (
+            <SystemSpecification
+              username={username}
+              systemSpecs={systemSpecs}
+              activeModel={activeModel}
+              apiKey={apiKey}
+              provider={provider}
+              onChangeConfig={() => setActivePage('recommendations')}
+            />
+          ) : activePage === 'recommendations' ? (
+            <LlmSuggestions
+              suggestions={suggestions}
+              onGoToByok={() => setActivePage('byok')}
+              onSelectModel={handleSelectModel}
+              hasApiKeyConfigured={!!apiKey}
+            />
+          ) : activePage === 'byok' ? (
+            <ByokConfiguration
+              initialApiKey={apiKey}
+              initialProvider={provider}
               onBack={() => {
                 setActivePage('recommendations')
               }}
-              onConfirm={handleConfirmModel}
-              onCancel={handleCancelInstall}
-              installingStatus={installingStatus}
+              onSave={handleSaveApiKey}
             />
-          )
-        )}
+          ) : (
+            selectedModel && (
+              <OllamaSetup
+                model={selectedModel}
+                allModels={suggestions}
+                onBack={() => {
+                  setActivePage('recommendations')
+                }}
+                onConfirm={handleConfirmModel}
+                onCancel={handleCancelInstall}
+                installingStatus={installingStatus}
+              />
+            )
+          )}
+        </div>
       </div>
     </div>
   )
