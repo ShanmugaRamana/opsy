@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use super::types::MemoryInfo;
+use crate::system::domain::MemoryInfo;
 
-pub fn get_memory_info() -> MemoryInfo {
+pub fn scan_memory() -> MemoryInfo {
     let file = match File::open("/proc/meminfo") {
         Ok(f) => f,
         Err(_) => {

@@ -1,29 +1,22 @@
-pub mod types;
-mod cpu;
-mod memory;
-mod disk;
-mod gpu;
-mod os;
+pub mod domain;
+pub mod queries;
+pub(crate) mod infra;
+pub mod http;
 
-use types::SystemSpecs;
-
-pub fn get_system_specs() -> SystemSpecs {
-    SystemSpecs {
-        cpu: cpu::get_cpu_info(),
-        ram: memory::get_memory_info(),
-        disk: disk::get_disk_info(),
-        gpus: gpu::get_gpu_info(),
-        os: os::get_os_info(),
-    }
-}
+#[allow(unused_imports)]
+pub use domain::{CpuInfo, DiskInfo, GpuInfo, MemoryInfo, OsInfo, SystemSpecs};
+pub use queries::register_queries;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::bus::QueryBus;
+    use crate::system::queries::GetSystemSpecsQuery;
 
-    #[test]
-    fn test_get_system_specs() {
-        let specs = get_system_specs();
+    #[tokio::test]
+    async fn test_get_system_specs_query() {
+        let query_bus = register_queries(QueryBus::builder()).build();
+        let specs = query_bus.dispatch(GetSystemSpecsQuery).await.expect("Failed to get specs");
         assert!(!specs.cpu.model_name.is_empty());
         assert!(specs.ram.total_gb > 0.0);
         assert!(specs.disk.total_gb > 0.0);

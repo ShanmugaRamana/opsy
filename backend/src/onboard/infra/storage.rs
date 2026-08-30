@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-use super::types::UserData;
+use crate::onboard::domain::UserData;
 
 const STORAGE_FILE: &str = "user_data.json";
 

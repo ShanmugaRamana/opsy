@@ -1,4 +1,5 @@
-use super::types::{SystemSpecs, LlmSuggestion};
+use crate::system::domain::SystemSpecs;
+use crate::onboard::domain::LlmSuggestion;
 
 pub fn get_recommendations(specs: &SystemSpecs) -> Vec<LlmSuggestion> {
     let ram = specs.ram.total_gb;

@@ -253,10 +253,12 @@ function App() {
       />
 
       {/* Content Canvas */}
-      <div className="flex-1 h-full overflow-y-auto flex flex-col items-center py-6 pb-24 px-4 w-full relative">
-        <div className="w-full flex justify-center">
+      <div className={`flex-1 h-full flex flex-col items-center w-full relative ${
+        activePage === 'home' ? 'p-0 overflow-hidden' : 'py-6 pb-24 px-4 overflow-y-auto'
+      }`}>
+        <div className={`w-full flex justify-center ${activePage === 'home' ? 'h-full' : ''}`}>
           {activePage === 'home' ? (
-            <Home />
+            <Home activeModel={activeModel} provider={provider} />
           ) : activePage === 'dashboard' ? (
             <SystemSpecification
               username={username}

@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-pub use crate::system::types::SystemSpecs;
+use crate::system::domain::SystemSpecs;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LlmSuggestion {
@@ -23,4 +23,11 @@ pub struct UserData {
     pub suggestions: Vec<LlmSuggestion>,
     pub api_key: Option<ApiKeyConfig>,
     pub active_model: Option<String>,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ProgressEvent {
+    pub status: String,
+    pub percentage: u32,
+    pub message: String,
 }

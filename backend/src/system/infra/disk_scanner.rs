@@ -1,7 +1,7 @@
 use nix::sys::statvfs::statvfs;
-use super::types::DiskInfo;
+use crate::system::domain::DiskInfo;
 
-pub fn get_disk_info() -> DiskInfo {
+pub fn scan_disk() -> DiskInfo {
     match statvfs("/") {
         Ok(stats) => {
             let total = stats.blocks() as f64 * stats.fragment_size() as f64;

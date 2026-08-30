@@ -1,8 +1,8 @@
 use std::fs;
 use std::path::Path;
-use super::types::GpuInfo;
+use crate::system::domain::GpuInfo;
 
-pub fn get_gpu_info() -> Vec<GpuInfo> {
+pub fn scan_gpu() -> Vec<GpuInfo> {
     let mut gpus = Vec::new();
     let drm_path = Path::new("/sys/class/drm");
     if !drm_path.exists() {

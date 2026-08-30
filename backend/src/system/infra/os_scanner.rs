@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use super::types::OsInfo;
+use crate::system::domain::OsInfo;
 
-pub fn get_os_info() -> OsInfo {
+pub fn scan_os() -> OsInfo {
     let mut kernel = String::new();
     let mut uts_version = String::new();
     

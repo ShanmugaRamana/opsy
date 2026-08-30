@@ -2,17 +2,10 @@ use std::process::Stdio;
 use tokio::process::Command;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::mpsc::Sender;
-use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
-
-#[derive(Serialize, Clone, Debug)]
-pub struct ProgressEvent {
-    pub status: String,
-    pub percentage: u32,
-    pub message: String,
-}
+use crate::onboard::domain::ProgressEvent;
 
 pub type ActiveProcess = Arc<Mutex<Option<oneshot::Sender<()>>>>;
 
@@ -276,9 +269,9 @@ pub async fn run_install_and_pull(
                 }).await;
 
                 // Save model to user profile
-                let mut data = super::read_user_data();
+                let mut data = super::storage::read_user_data();
                 data.active_model = Some(model_name.clone());
-                let _ = super::write_user_data(&data);
+                let _ = super::storage::write_user_data(&data);
             } else {
                 let _ = tx.send(ProgressEvent {
                     status: "failed".to_string(),

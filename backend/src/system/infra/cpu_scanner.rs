@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use super::types::CpuInfo;
+use crate::system::domain::CpuInfo;
 
-pub fn get_cpu_info() -> CpuInfo {
+pub fn scan_cpu() -> CpuInfo {
     let file = match File::open("/proc/cpuinfo") {
         Ok(f) => f,
         Err(_) => {
