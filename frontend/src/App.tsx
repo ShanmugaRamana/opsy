@@ -32,6 +32,12 @@ interface InstallingStatus {
   message: string;
 }
 
+interface ChatSessionItem {
+  id: string;
+  title: string;
+  created_at: string;
+}
+
 function App() {
   const [loading, setLoading] = useState<boolean>(true)
   const [onboarded, setOnboarded] = useState<boolean>(false)
@@ -45,6 +51,9 @@ function App() {
   const [provider, setProvider] = useState<string>(() => localStorage.getItem("opsy_api_provider") || "openai")
   const [activeModel, setActiveModel] = useState<string>('')
 
+  const [chatSessions, setChatSessions] = useState<ChatSessionItem[]>([])
+  const [activeSessionId, setActiveSessionId] = useState<string>('')
+
   const [submitting, setSubmitting] = useState<boolean>(false)
   const [errorMsg, setErrorMsg] = useState<string>('')
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true)
@@ -52,6 +61,25 @@ function App() {
   // Real-time progress updates state
   const [installingStatus, setInstallingStatus] = useState<InstallingStatus | null>(null)
   const [activeEventSource, setActiveEventSource] = useState<EventSource | null>(null)
+
+  const loadChatSessions = () => {
+    fetch(`${API_BASE}/chat/sessions`)
+      .then((res) => {
+        if (!res.ok) return [];
+        return res.json() as Promise<ChatSessionItem[]>;
+      })
+      .then((sessions) => {
+        setChatSessions(sessions || []);
+        if (sessions && sessions.length > 0 && !activeSessionId) {
+          setActiveSessionId(sessions[0].id);
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    loadChatSessions();
+  }, [])
 
   // Check onboarding status on load
   useEffect(() => {
@@ -241,15 +269,27 @@ function App() {
     )
   }
 
+  const handleNewChat = () => {
+    const newId = `sess_${Date.now()}`;
+    setActiveSessionId(newId);
+    setActivePage('home');
+  };
+
   return (
     <div className="flex h-screen w-full bg-black text-zinc-300 overflow-hidden">
       {/* Navigation Sidebar */}
       <Sidebar
-        activePage={activePage === 'ollama' ? 'recommendations' : activePage}
         onNavigate={(page) => setActivePage(page)}
         username={username}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
+        onNewChat={handleNewChat}
+        chatSessions={chatSessions}
+        activeSessionId={activeSessionId}
+        onSelectSession={(id) => {
+          setActiveSessionId(id);
+          setActivePage('home');
+        }}
       />
 
       {/* Content Canvas */}
@@ -258,7 +298,12 @@ function App() {
       }`}>
         <div className={`w-full flex justify-center ${activePage === 'home' ? 'h-full' : ''}`}>
           {activePage === 'home' ? (
-            <Home activeModel={activeModel} provider={provider} />
+            <Home
+              currentSessionId={activeSessionId}
+              onSessionUpdated={(_session) => {
+                loadChatSessions();
+              }}
+            />
           ) : activePage === 'dashboard' ? (
             <SystemSpecification
               username={username}
