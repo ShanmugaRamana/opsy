@@ -11,29 +11,23 @@ use tracing_subscriber::FmtSubscriber;
 mod shared;
 mod system;
 mod onboard;
+mod chat;
 
 use shared::bus::{CommandBus, QueryBus};
 
-#[derive(Clone)]
-pub struct AppState {
-    pub command_bus: CommandBus,
-    pub query_bus: QueryBus,
-    pub active_proc: onboard::ActiveProcess,
-}
-
 #[tokio::main]
 async fn main() {
-    // Open log file in append mode
-    let file = File::options()
+    // Open system.log file in append mode to log all activity
+    let log_file = File::options()
         .create(true)
         .append(true)
-        .open("opsy-backend.log")
+        .open("system.log")
         .unwrap();
 
-    // Set up tracing to write to opsy-backend.log
+    // Set up tracing subscriber writing to system.log and stdout
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
-        .with_writer(move || file.try_clone().unwrap())
+        .with_writer(move || log_file.try_clone().unwrap())
         .finish();
 
     tracing::subscriber::set_global_default(subscriber)
@@ -49,10 +43,12 @@ async fn main() {
     let query_bus_builder = QueryBus::builder();
     let query_bus_builder = system::register_queries(query_bus_builder);
     let query_bus_builder = onboard::register_queries(query_bus_builder);
+    let query_bus_builder = chat::register_queries(query_bus_builder);
     let query_bus = query_bus_builder.build();
 
     let command_bus_builder = CommandBus::builder();
     let command_bus_builder = onboard::register_commands(command_bus_builder);
+    let command_bus_builder = chat::register_commands(command_bus_builder);
     let command_bus = command_bus_builder.build();
 
     let active_proc: onboard::ActiveProcess = Arc::new(Mutex::new(None));
@@ -61,6 +57,11 @@ async fn main() {
         command_bus: command_bus.clone(),
         query_bus: query_bus.clone(),
         active_proc: active_proc.clone(),
+    };
+
+    let chat_state = chat::http::ChatState {
+        command_bus: command_bus.clone(),
+        query_bus: query_bus.clone(),
     };
 
     // Build our application with routes
@@ -77,10 +78,17 @@ async fn main() {
         .route("/onboard/cancel-run", post(onboard::http::cancel_run_handler))
         .with_state(onboard_state);
 
+    let chat_router = Router::new()
+        .route("/chat/sessions", get(chat::http::list_sessions_handler).post(chat::http::create_session_handler))
+        .route("/chat/sessions/{session_id}", get(chat::http::get_session_handler))
+        .route("/chat/sessions/{session_id}/messages", post(chat::http::send_message_handler))
+        .with_state(chat_state);
+
     let app = Router::new()
         .route("/health", get(health_handler))
         .merge(system_router)
         .merge(onboard_router)
+        .merge(chat_router)
         .layer(cors);
 
     // Run our app, listening on port 8000
