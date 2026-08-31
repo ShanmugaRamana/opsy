@@ -1,8 +1,8 @@
 # app/src/config.py
 
 # Splash Screen Settings
-SPLASH_WIDTH = 400
-SPLASH_HEIGHT = 300
+SPLASH_WIDTH = 700
+SPLASH_HEIGHT = 450
 SPLASH_BG_COLOR = '#faf5ea'
 
 # Main App Settings
