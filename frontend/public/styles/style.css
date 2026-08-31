@@ -1,11 +1,26 @@
+@font-face {
+    font-family: 'Clash Display';
+    src: url('../assets/fonts/ClashDisplay/Fonts/WEB/fonts/ClashDisplay-Regular.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Playfair Display';
+    src: url('../assets/fonts/Playfair_Display/PlayfairDisplay-VariableFont_wght.ttf') format('truetype');
+    font-style: normal;
+    font-display: swap;
+}
+
 :root {
-    --bg-color: #0f172a;
-    --card-bg: #1e293b;
-    --text-main: #f8fafc;
-    --text-muted: #94a3b8;
+    --bg-color: #faf5ea;
+    --card-bg: #ffffff;
+    --text-main: #000000;
+    --text-muted: #475569;
     --primary: #3b82f6;
     --primary-hover: #2563eb;
-    --border: #334155;
+    --border: #e2e8f0;
 }
 
 * {
@@ -15,7 +30,7 @@
 }
 
 body {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Playfair Display', serif;
     background-color: var(--bg-color);
     color: var(--text-main);
     display: flex;
@@ -38,12 +53,11 @@ header {
 }
 
 h1 {
+    font-family: 'Clash Display', sans-serif;
     font-size: 2.5rem;
     font-weight: 600;
     margin-bottom: 0.5rem;
-    background: linear-gradient(to right, #60a5fa, #3b82f6);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--text-main);
 }
 
 header p {

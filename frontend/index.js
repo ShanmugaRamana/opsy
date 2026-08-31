@@ -20,6 +20,13 @@ app.get('/', (req, res) => {
   res.render('index', { title: 'Frontend App', message: 'Hello from Node, Express and EJS!' });
 });
 
+// Shutdown route for PC app to close the server
+app.post('/shutdown', (req, res) => {
+  console.log('Received shutdown request, terminating server...');
+  res.send('Server shutting down');
+  process.exit(0);
+});
+
 // Start the server
 app.listen(port, () => {
   console.log(`Frontend app listening at http://localhost:${port}`);
