@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starting Opsy</title>
+    <style>
+        @font-face {
+            font-family: 'Clash Display';
+            src: url('../assets/fonts/ClashDisplay/Fonts/WEB/fonts/ClashDisplay-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Playfair Display';
+            src: url('../assets/fonts/Playfair_Display/PlayfairDisplay-VariableFont_wght.ttf') format('truetype');
+            font-style: normal;
+            font-display: swap;
+        }
+
+        :root {
+            /* Pale background */
+            --bg-color: #faf5ea;
+            --text-color: #0f172a;
+            --accent-color: #000000;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+            /* Allow dragging the frameless window */
+            -webkit-app-region: drag;
+            user-select: none;
+            overflow: hidden;
+
+            /* Subtle border for light theme */
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-sizing: border-box;
+
+            /* Smooth fade-in to hide the sudden HTML paint */
+            opacity: 0;
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+
+        .logo-image {
+            width: 48px;
+            /* Adjust size as needed */
+            height: 48px;
+            object-fit: contain;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2.7rem;
+            /* Slightly larger since there's no subquote */
+            font-family: 'Clash Display', sans-serif;
+            font-weight: 400;
+            letter-spacing: -0.05em;
+            color: #0f172a;
+        }
+
+        .status-text {
+            margin-top: 4px;
+            font-size: 0.95rem;
+            font-family: 'Playfair Display', serif;
+            font-style: normal;
+            color: #64748b;
+            text-align: center;
+        }
+
+        /* Progress Bar attached to the very bottom */
+        .progress-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            background-color: transparent;
+            /* No separate background track */
+            overflow: visible;
+            /* Changed to visible so text can float above */
+        }
+
+        .progress-bar {
+            position: relative;
+            height: 100%;
+            width: 0%;
+            background-color: var(--accent-color);
+            /* Black progress */
+            border-radius: 0;
+            /* Sharp edges */
+        }
+
+        .progress-text {
+            position: absolute;
+            right: 0;
+            bottom: 12px;
+            font-family: 'Clash Display', 'Segoe UI', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: var(--text-color);
+            margin-right: 4px;
+            /* Keeps it strictly inside the bar bounds so it doesn't overflow at 100% */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="logo-container">
+        <img src="../assets/images/logo.png" alt="Opsy Logo" class="logo-image">
+        <h1>Opsy</h1>
+    </div>
+
+    <p id="status-text" class="status-text">Booting Core...</p>
+
+    <div class="progress-container">
+        <div class="progress-bar" id="progress-bar">
+            <span class="progress-text" id="progress-text">0%</span>
+        </div>
+    </div>
+
+    <script>
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const statusText = document.getElementById('status-text');
+
+        const duration = 8000; // 8 seconds
+        const startTime = Date.now();
+
+        const statuses = [
+            "Booting Core",
+            "Aligning Systems",
+            "Preparing Environment",
+            "Establishing Link"
+        ];
+
+        function updateProgress() {
+            const elapsed = Date.now() - startTime;
+            let percent = Math.min((elapsed / duration) * 100, 100);
+
+            progressBar.style.width = percent + '%';
+            progressText.innerText = Math.floor(percent) + '%';
+
+            // Update the stylish status text
+            const statusIndex = Math.min(Math.floor((elapsed / duration) * statuses.length), statuses.length - 1);
+            if (statusText.innerText !== statuses[statusIndex]) {
+                statusText.innerText = statuses[statusIndex];
+            }
+
+            if (percent < 100) {
+                requestAnimationFrame(updateProgress);
+            }
+        }
+
+        requestAnimationFrame(updateProgress);
+    </script>
+</body>
+
+</html>
