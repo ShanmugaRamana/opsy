@@ -21,9 +21,23 @@ def start_frontend_server():
     except Exception as e:
         print(f"Failed to start frontend server: {e}")
 
+def start_backend_server():
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        backend_dir = os.path.join(os.path.dirname(base_dir), 'backend')
+        venv_python = os.path.join(backend_dir, 'venv', 'bin', 'python')
+        subprocess.Popen(
+            [venv_python, '-m', 'uvicorn', 'main:app', '--port', '8000'],
+            cwd=backend_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        print("Starting backend server...")
+    except Exception as e:
+        print(f"Failed to start backend server: {e}")
+
 def main():
     start_frontend_server()
-    
+    start_backend_server()
+
     # Get the correct file path for the splash HTML
     splash_url = get_screen_path('splash.html')
     
