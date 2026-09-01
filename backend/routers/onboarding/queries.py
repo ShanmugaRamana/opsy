@@ -2,6 +2,7 @@ CREATE_USER_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS "user" (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL,
+    profile_pic TEXT NOT NULL,
     linux_experience TEXT NOT NULL,
     role_use_case TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -20,10 +21,10 @@ def user_table_has_rows(conn):
         return cur.fetchone()[0]
 
 
-def insert_user(conn, name, linux_experience, role_use_case):
+def insert_user(conn, name, profile_pic, linux_experience, role_use_case):
     with conn.cursor() as cur:
         cur.execute(CREATE_USER_TABLE_SQL)
         cur.execute(
-            'INSERT INTO "user" (name, linux_experience, role_use_case) VALUES (%s, %s, %s)',
-            (name, linux_experience, role_use_case),
+            'INSERT INTO "user" (name, profile_pic, linux_experience, role_use_case) VALUES (%s, %s, %s, %s)',
+            (name, profile_pic, linux_experience, role_use_case),
         )

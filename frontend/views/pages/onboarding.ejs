@@ -1,41 +1,84 @@
 <div class="onboarding-container">
-    <div class="avatar-container">
-        <svg class="avatar-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-            <circle cx="12" cy="7" r="4"></circle>
-        </svg>
+    <!-- Splash Screen -->
+    <div class="onboarding-splash" id="onboarding-splash">
+        <img src="/assets/images/logo.png" alt="Opsy Logo" class="splash-logo">
+        <h2 class="splash-heading">Welcome to Opsy</h2>
     </div>
-    <h2 class="onboarding-heading">Welcome to Opsy</h2>
-    <div class="onboarding-input-group">
-        <input type="text" id="user-name" placeholder="Enter your name" class="onboarding-input" autofocus>
+
+    <!-- Form Screen -->
+    <div class="onboarding-form" id="onboarding-form" style="display: none; opacity: 0;">
+        
+        <!-- Step 1: Choose Profile -->
+        <div id="step-1" class="onboarding-step">
+            <h2 class="onboarding-heading" style="text-align: center; margin-bottom: 2rem;">Choose your profile</h2>
+            <div class="profile-picker" style="margin-bottom: 2rem;">
+                <img src="/assets/profile/profile-1.jpg" alt="Profile 1" class="profile-option" data-profile="profile-1.jpg">
+                <img src="/assets/profile/profile-2.png" alt="Profile 2" class="profile-option" data-profile="profile-2.png">
+                <img src="/assets/profile/profile-3.png" alt="Profile 3" class="profile-option" data-profile="profile-3.png">
+                <img src="/assets/profile/profile-4.png" alt="Profile 4" class="profile-option" data-profile="profile-4.png">
+                <img src="/assets/profile/profile-5.png" alt="Profile 5" class="profile-option" data-profile="profile-5.png">
+                <img src="/assets/profile/profile-6.png" alt="Profile 6" class="profile-option" data-profile="profile-6.png">
+            </div>
+            <button class="primary-btn" id="next-step-btn">Continue</button>
+            <p id="step-1-error" class="onboarding-error" style="display:none;color:#dc2626;margin-top:8px;font-size:0.85rem;"></p>
+        </div>
+
+        <!-- Step 2: Nickname Input -->
+        <div id="step-2" class="onboarding-step" style="display: none;">
+            <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                <div class="onboarding-row" style="align-items: center; margin-bottom: 1.5rem;">
+                    <div class="profile-section" style="position: relative;">
+                        <button id="back-to-step-1-btn" style="position: absolute; top: -4rem; left: 0; background: none; border: none; color: var(--text-muted); cursor: pointer; font-family: 'Clash Display', sans-serif; font-size: 0.9rem; padding: 0; outline: none; transition: color 0.2s ease;" onmouseover="this.style.color='#000'" onmouseout="this.style.color='var(--text-muted)'">Back</button>
+                        <img src="" id="selected-profile-display" class="profile-option selected" style="cursor: default;" alt="Selected Profile">
+                    </div>
+
+                    <div class="onboarding-input-group" style="margin-bottom: 0;">
+                        <label for="user-name" class="onboarding-label">Nickname</label>
+                        <input type="text" id="user-name" class="onboarding-input">
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; width: 100%; max-width: 280px;">
+                    <button class="primary-btn" id="next-step-2-btn">Continue</button>
+                </div>
+                <p id="step-2-error" class="onboarding-error" style="display:none;color:#dc2626;margin-top:8px;font-size:0.85rem; text-align: right; width: 100%; max-width: 280px;"></p>
+            </div>
+        </div>
+
+        <!-- Step 3: Additional Info -->
+        <div id="step-3" class="onboarding-step" style="display: none;">
+            <div style="display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 380px;">
+                <button id="back-to-step-2-btn" style="align-self: flex-start; background: none; border: none; color: var(--text-muted); cursor: pointer; font-family: 'Clash Display', sans-serif; font-size: 0.9rem; margin-bottom: 2rem; padding: 0; outline: none; transition: color 0.2s ease;" onmouseover="this.style.color='#000'" onmouseout="this.style.color='var(--text-muted)'">Back</button>
+                
+                <h2 class="onboarding-heading" style="text-align: center; margin-bottom: 2rem; font-size: 1.5rem;">A little more about you</h2>
+
+                <div class="chip-group" id="linux-exp-group">
+                    <p class="chip-label">Linux experience level</p>
+                    <div class="chip-container">
+                        <div class="chip" data-value="beginner">Beginner</div>
+                        <div class="chip" data-value="intermediate">Intermediate</div>
+                        <div class="chip" data-value="power-user">Power User</div>
+                        <div class="chip" data-value="sysadmin-pro">Sysadmin-Pro</div>
+                    </div>
+                </div>
+                
+                <div class="chip-group" id="role-use-case-group">
+                    <p class="chip-label">Role / Use Case</p>
+                    <div class="chip-container">
+                        <div class="chip" data-value="developer">Developer</div>
+                        <div class="chip" data-value="sysadmin">Sysadmin</div>
+                        <div class="chip" data-value="homelab">Homelab / Self-hoster</div>
+                        <div class="chip" data-value="student">Student</div>
+                        <div class="chip" data-value="desktop-user">Just a regular desktop user</div>
+                    </div>
+                </div>
+
+                <button class="primary-btn" id="final-continue-btn" style="width: 100%; margin-top: 1.5rem;">Setup</button>
+                <p id="onboarding-error" class="onboarding-error" style="display:none;color:#dc2626;margin-top:8px;font-size:0.85rem; text-align: center;"></p>
+            </div>
+        </div>
+
     </div>
-    <div class="onboarding-input-group custom-dropdown" id="linux-exp-dropdown">
-        <div class="custom-dropdown-trigger onboarding-input">
-            <span class="selected-text">Linux experience level</span>
-            <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-        </div>
-        <div class="custom-dropdown-options">
-            <div class="custom-option" data-value="beginner">Beginner</div>
-            <div class="custom-option" data-value="intermediate">Intermediate</div>
-            <div class="custom-option" data-value="power-user">Power User</div>
-            <div class="custom-option" data-value="sysadmin-pro">Sysadmin-Pro</div>
-        </div>
-    </div>
-    <div class="onboarding-input-group custom-dropdown" id="role-use-case-dropdown">
-        <div class="custom-dropdown-trigger onboarding-input">
-            <span class="selected-text">Role / Use Case</span>
-            <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-        </div>
-        <div class="custom-dropdown-options">
-            <div class="custom-option" data-value="developer">Developer</div>
-            <div class="custom-option" data-value="sysadmin">Sysadmin</div>
-            <div class="custom-option" data-value="homelab">Homelab / Self-hoster</div>
-            <div class="custom-option" data-value="student">Student</div>
-            <div class="custom-option" data-value="desktop-user">Just a regular desktop user</div>
-        </div>
-    </div>
-    <button class="primary-btn" id="continue-btn">Continue</button>
-    <p id="onboarding-error" class="onboarding-error" style="display:none;color:#dc2626;margin-top:8px;font-size:0.85rem;"></p>
 </div>
 
 <script src="/js/onboarding.js"></script>

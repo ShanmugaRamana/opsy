@@ -21,7 +21,7 @@ def verify_onboarding():
 def create_onboarding_user(payload: OnboardingUserPayload):
     conn = get_connection()
     try:
-        insert_user(conn, payload.name, payload.linux_experience, payload.role_use_case)
+        insert_user(conn, payload.name, payload.profile_pic, payload.linux_experience, payload.role_use_case)
         conn.commit()
         return {"message": "success"}
     except Exception as e:

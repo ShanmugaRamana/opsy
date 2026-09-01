@@ -279,6 +279,85 @@ body {
     width: 100%;
 }
 
+.onboarding-splash {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+}
+
+.splash-logo {
+    width: 56px;
+    height: 56px;
+    object-fit: contain;
+}
+
+.splash-heading {
+    font-family: 'Clash Display', sans-serif;
+    font-size: 2.25rem;
+    color: var(--text-main);
+    margin: 0;
+}
+
+.onboarding-form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.onboarding-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.onboarding-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 3rem;
+    margin-bottom: 2rem;
+    width: 100%;
+}
+
+.onboarding-row .onboarding-input-group {
+    margin-bottom: 0;
+}
+
+.profile-picker {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+    max-width: 250px;
+}
+
+.profile-option {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    cursor: pointer;
+    border: 3px solid transparent;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.profile-option:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.profile-option.selected {
+    border-color: #000000;
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
 .avatar-container {
     width: 64px;
     height: 64px;
@@ -309,25 +388,36 @@ body {
     width: 100%;
     max-width: 280px;
     margin-bottom: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+}
+
+.onboarding-label {
+    font-family: 'Clash Display', sans-serif;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
 }
 
 .onboarding-input {
     width: 100%;
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: 9999px;
-    background-color: var(--card-bg);
+    padding: 0.5rem 0;
+    border: none;
+    border-bottom: 2px solid var(--border);
+    border-radius: 0;
+    background-color: transparent;
     font-family: 'Clash Display', sans-serif;
-    font-size: 1rem;
+    font-size: 1.2rem;
     color: var(--text-main);
-    text-align: center;
+    text-align: left;
     outline: none;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    transition: border-color 0.2s ease;
 }
 
 .onboarding-input:focus {
     border-color: #000000;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    box-shadow: none;
 }
 
 
@@ -406,4 +496,53 @@ body {
 
 .custom-option:hover {
     background-color: var(--bg-color);
+}
+
+/* Chips */
+.chip-group {
+    width: 100%;
+    margin-bottom: 2rem;
+    display: flex;
+    flex-direction: column;
+}
+
+.chip-label {
+    font-family: 'Clash Display', sans-serif;
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    margin: 0 0 0.75rem 0;
+    text-align: left;
+    width: 100%;
+}
+
+.chip-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    justify-content: flex-start;
+    width: 100%;
+}
+
+.chip {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    font-family: 'Clash Display', sans-serif;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    background-color: transparent;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.chip:hover {
+    border-color: var(--text-main);
+    color: var(--text-main);
+}
+
+.chip.selected {
+    background-color: var(--text-main);
+    color: var(--bg-color);
+    border-color: var(--text-main);
 }

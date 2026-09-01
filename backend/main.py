@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import health, onboarding, root, system
+from routers import health, onboarding, root, system, user
 
 app = FastAPI(title="Opsy API")
 
@@ -16,3 +16,4 @@ app.include_router(root.router)
 app.include_router(health.router)
 app.include_router(system.router)
 app.include_router(onboarding.router)
+app.include_router(user.router)
