@@ -15,9 +15,9 @@ app.use(express.json());
 // Parse URL-encoded bodies
 app.use(express.urlencoded({ extended: true }));
 
-// Basic route
+// Main app route
 app.get('/', (req, res) => {
-  res.render('index', { title: 'Frontend App', message: 'Hello from Node, Express and EJS!' });
+  res.render('index', { title: 'Opsy', page: 'pages/home' });
 });
 
 // Shutdown route for PC app to close the server

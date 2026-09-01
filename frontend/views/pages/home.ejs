@@ -1,0 +1,62 @@
+
+    <aside class="sidebar" id="sidebar">
+        <header class="sidebar-header">
+            <h1 class="title">Opsy</h1>
+            <button class="collapse-btn" id="collapse-btn" title="Toggle Sidebar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>
+            </button>
+        </header>
+        <div class="sidebar-content">
+            <button class="new-chat-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                <span>New Chat</span>
+            </button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div class="mode-switcher-container">
+            <div class="mode-switcher">
+                <button class="mode-btn active">Chat</button>
+                <button class="mode-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                    Ops
+                </button>
+            </div>
+        </div>
+
+        <div class="chat-wrapper">
+            <div class="greeting-container">
+                <img src="/assets/images/logo.png" alt="Opsy" class="greeting-logo">
+                <h2 class="greeting-text" id="greeting-text">How can I help you?</h2>
+            </div>
+            
+            <div class="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Message Opsy..." autofocus>
+                <button id="send-btn" class="send-btn">
+                    <img src="/assets/icons/send.png" alt="Send" class="send-icon">
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const sidebar = document.getElementById('sidebar');
+        const collapseBtn = document.getElementById('collapse-btn');
+
+        collapseBtn.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+        });
+
+        // Randomized greeting phrases
+        const phrases = [
+            "Ready?",
+            "What's next?",
+            "Let's go.",
+            "Hello.",
+            "Need help?",
+            "Build it.",
+            "Let's work."
+        ];
+        document.getElementById('greeting-text').innerText = phrases[Math.floor(Math.random() * phrases.length)];
+    </script>

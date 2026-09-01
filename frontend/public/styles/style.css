@@ -42,26 +42,89 @@ body {
     width: 260px;
     background-color: transparent;
     border-right: 1px solid var(--border);
-    padding: 2rem;
+    padding: 0.7rem;
     display: flex;
     flex-direction: column;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease, border-color 0.3s ease;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.sidebar.collapsed {
+    width: 48px;
+    padding: 0.7rem 0.5rem;
+    border-right-color: transparent;
 }
 
 .sidebar-header {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 1rem;
     margin-bottom: 2rem;
 }
 
+.sidebar.collapsed .sidebar-header {
+    justify-content: center;
+}
 
+.sidebar.collapsed .title {
+    display: none;
+    opacity: 0;
+}
 
 .sidebar-header .title {
     font-family: 'Clash Display', sans-serif;
-    font-size: 1.8rem;
+    font-size: 1.4rem;
     font-weight: 600;
     margin: 0;
     color: var(--text-main);
+    transition: opacity 0.2s ease;
+}
+
+.collapse-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 0.3rem;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.collapse-btn:hover {
+    color: var(--text-main);
+}
+
+.sidebar-content {
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar.collapsed .sidebar-content {
+    display: none;
+}
+
+.new-chat-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    color: var(--text-main);
+    font-family: 'Playfair Display', serif;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.new-chat-btn:hover {
+    border-color: #000000;
 }
 
 /* Main Content */
@@ -74,10 +137,87 @@ body {
     position: relative;
 }
 
+/* Mode Switcher */
+.mode-switcher-container {
+    position: absolute;
+    top: 2rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+}
+
+.mode-switcher {
+    display: flex;
+    align-items: center;
+    background-color: transparent;
+    padding: 0.3rem;
+    border-radius: 9999px;
+    border: 1px solid var(--border);
+}
+
+.mode-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    padding: 0.4rem 0;
+    width: 96px;
+    border-radius: 9999px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-family: 'Playfair Display', serif;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mode-btn.active {
+    background-color: #000000;
+    color: #ffffff;
+}
+
+.mode-btn:not(.active):hover {
+    color: var(--text-main);
+}
+
+/* Greeting Area */
+.greeting-container {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-bottom: 3.5rem;
+    width: 100%;
+    pointer-events: none;
+}
+
+.greeting-logo {
+    width: 44px;
+    height: 44px;
+    object-fit: contain;
+}
+
+.greeting-text {
+    font-family: 'Clash Display', sans-serif;
+    font-size: 2rem;
+    font-weight: 500;
+    color: var(--text-main);
+    margin: 0;
+}
+
 /* Chat Input (Center) */
 .chat-wrapper {
     width: 100%;
     max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
 }
 
 .chat-input-container {
