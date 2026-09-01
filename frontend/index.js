@@ -20,6 +20,11 @@ app.get('/', (req, res) => {
   res.render('index', { title: 'Opsy', page: 'pages/home' });
 });
 
+// Onboarding route
+app.get('/onboarding', (req, res) => {
+  res.render('index', { title: 'Onboarding - Opsy', page: 'pages/onboarding' });
+});
+
 // Shutdown route for PC app to close the server
 app.post('/shutdown', (req, res) => {
   console.log('Received shutdown request, terminating server...');

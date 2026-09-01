@@ -1,0 +1,65 @@
+<div class="onboarding-container">
+    <div class="avatar-container">
+        <svg class="avatar-placeholder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+            <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+    </div>
+    <h2 class="onboarding-heading">Welcome to Opsy</h2>
+    <div class="onboarding-input-group">
+        <input type="text" id="user-name" placeholder="Enter your name" class="onboarding-input" autofocus>
+    </div>
+    <div class="onboarding-input-group custom-dropdown" id="linux-exp-dropdown">
+        <div class="custom-dropdown-trigger onboarding-input">
+            <span class="selected-text">Linux experience level</span>
+            <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="custom-dropdown-options">
+            <div class="custom-option" data-value="beginner">Beginner</div>
+            <div class="custom-option" data-value="intermediate">Intermediate</div>
+            <div class="custom-option" data-value="power-user">Power User</div>
+            <div class="custom-option" data-value="sysadmin-pro">Sysadmin-Pro</div>
+        </div>
+    </div>
+    <div class="onboarding-input-group custom-dropdown" id="role-use-case-dropdown">
+        <div class="custom-dropdown-trigger onboarding-input">
+            <span class="selected-text">Role / Use Case</span>
+            <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="custom-dropdown-options">
+            <div class="custom-option" data-value="developer">Developer</div>
+            <div class="custom-option" data-value="sysadmin">Sysadmin</div>
+            <div class="custom-option" data-value="homelab">Homelab / Self-hoster</div>
+            <div class="custom-option" data-value="student">Student</div>
+            <div class="custom-option" data-value="desktop-user">Just a regular desktop user</div>
+        </div>
+    </div>
+    <button class="primary-btn">Continue</button>
+</div>
+
+<script>
+    document.querySelectorAll('.custom-dropdown').forEach(dropdown => {
+        const trigger = dropdown.querySelector('.custom-dropdown-trigger');
+        const options = dropdown.querySelectorAll('.custom-option');
+        const selectedText = dropdown.querySelector('.selected-text');
+
+        trigger.addEventListener('click', (e) => {
+            document.querySelectorAll('.custom-dropdown').forEach(d => {
+                if(d !== dropdown) d.classList.remove('open');
+            });
+            dropdown.classList.toggle('open');
+            e.stopPropagation();
+        });
+
+        options.forEach(option => {
+            option.addEventListener('click', () => {
+                selectedText.textContent = option.textContent;
+                dropdown.classList.remove('open');
+            });
+        });
+    });
+
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('open'));
+    });
+</script>
