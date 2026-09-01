@@ -4,7 +4,7 @@ import os
 def get_screen_path(filename):
     """Helper to get the absolute path to screens."""
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return f"file://{os.path.join(base_dir, 'screens', filename)}"
+    return os.path.join(base_dir, 'screens', filename)
 
 def get_center_position(screen, width, height):
     """Calculate center position based on the primary screen."""
