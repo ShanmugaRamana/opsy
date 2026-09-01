@@ -1,10 +1,23 @@
 # app/main.py
 import webview
+import subprocess
+import os
 from src.config import SPLASH_WIDTH, SPLASH_HEIGHT, SPLASH_BG_COLOR
 from src.utils import get_screen_path, get_center_position
 from src.bridge import Api
 
+def start_frontend_server():
+    try:
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        frontend_dir = os.path.join(os.path.dirname(base_dir), 'frontend')
+        subprocess.Popen(['npm', 'start'], cwd=frontend_dir, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("Starting frontend server...")
+    except Exception as e:
+        print(f"Failed to start frontend server: {e}")
+
 def main():
+    start_frontend_server()
+    
     # Get the correct file path for the splash HTML
     splash_url = get_screen_path('splash.html')
     

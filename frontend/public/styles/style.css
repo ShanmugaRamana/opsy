@@ -20,7 +20,7 @@
     --text-muted: #475569;
     --primary: #3b82f6;
     --primary-hover: #2563eb;
-    --border: #e2e8f0;
+    --border: #bdbdbd;
 }
 
 * {
@@ -34,81 +34,97 @@ body {
     background-color: var(--bg-color);
     color: var(--text-main);
     display: flex;
-    justify-content: center;
-    align-items: center;
     min-height: 100vh;
-    padding: 2rem;
 }
 
-.container {
-    max-width: 800px;
-    width: 100%;
+/* Sidebar */
+.sidebar {
+    width: 260px;
+    background-color: transparent;
+    border-right: 1px solid var(--border);
+    padding: 2rem;
     display: flex;
     flex-direction: column;
-    gap: 2rem;
 }
 
-header {
-    text-align: center;
+.sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
 }
 
-h1 {
+
+
+.sidebar-header .title {
     font-family: 'Clash Display', sans-serif;
-    font-size: 2.5rem;
+    font-size: 1.8rem;
     font-weight: 600;
-    margin-bottom: 0.5rem;
+    margin: 0;
     color: var(--text-main);
 }
 
-header p {
-    color: var(--text-muted);
-    font-size: 1.1rem;
-}
-
-.card {
-    background-color: var(--card-bg);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 2rem;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+/* Main Content */
+.main-content {
+    flex-grow: 1;
     display: flex;
-    flex-direction: column;
+    justify-content: center;
     align-items: center;
-    gap: 1.5rem;
-    text-align: center;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    padding: 2rem;
+    position: relative;
 }
 
-.card:hover {
-    transform: translateY(-2px);
+/* Chat Input (Center) */
+.chat-wrapper {
+    width: 100%;
+    max-width: 600px;
+}
+
+.chat-input-container {
+    display: flex;
+    align-items: center;
+    background-color: var(--card-bg);
+    border: 1px solid #000000;
+    border-radius: 999px;
+    /* Pill shape */
+    padding: 0.2rem 0.4rem 0.2rem 1rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.chat-input-container:focus-within {
     box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    border-color: #000000;
 }
 
-.card h2 {
-    font-size: 1.5rem;
-    font-weight: 600;
+#chat-input {
+    flex-grow: 1;
+    border: none;
+    background: transparent;
+    font-size: 0.9rem;
+    font-family: 'Clash Display', sans-serif;
+    color: var(--text-main);
+    padding: 0.5rem;
+    outline: none;
 }
 
-.card p {
+#chat-input::placeholder {
     color: var(--text-muted);
 }
 
-button {
-    background-color: var(--primary);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-    font-weight: 600;
+.send-btn {
+    background: transparent;
+    border: 1px solid #000000;
+    padding: 0.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    transition: background-color 0.2s ease, transform 0.1s ease;
+    border-radius: 50%;
 }
 
-button:hover {
-    background-color: var(--primary-hover);
-}
-
-button:active {
-    transform: scale(0.98);
+.send-icon {
+    width: 14px;
+    height: 14px;
+    object-fit: contain;
 }
