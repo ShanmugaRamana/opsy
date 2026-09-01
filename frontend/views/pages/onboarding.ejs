@@ -34,32 +34,8 @@
             <div class="custom-option" data-value="desktop-user">Just a regular desktop user</div>
         </div>
     </div>
-    <button class="primary-btn">Continue</button>
+    <button class="primary-btn" id="continue-btn">Continue</button>
+    <p id="onboarding-error" class="onboarding-error" style="display:none;color:#dc2626;margin-top:8px;font-size:0.85rem;"></p>
 </div>
 
-<script>
-    document.querySelectorAll('.custom-dropdown').forEach(dropdown => {
-        const trigger = dropdown.querySelector('.custom-dropdown-trigger');
-        const options = dropdown.querySelectorAll('.custom-option');
-        const selectedText = dropdown.querySelector('.selected-text');
-
-        trigger.addEventListener('click', (e) => {
-            document.querySelectorAll('.custom-dropdown').forEach(d => {
-                if(d !== dropdown) d.classList.remove('open');
-            });
-            dropdown.classList.toggle('open');
-            e.stopPropagation();
-        });
-
-        options.forEach(option => {
-            option.addEventListener('click', () => {
-                selectedText.textContent = option.textContent;
-                dropdown.classList.remove('open');
-            });
-        });
-    });
-
-    document.addEventListener('click', () => {
-        document.querySelectorAll('.custom-dropdown').forEach(d => d.classList.remove('open'));
-    });
-</script>
+<script src="/js/onboarding.js"></script>

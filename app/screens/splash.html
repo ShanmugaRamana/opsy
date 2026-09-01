@@ -170,14 +170,14 @@
             }
         }
 
-        // Poll /onboarding/verify until it succeeds (the backend process can answer
+        // Poll /linux/onboarding/verify until it succeeds (the backend process can answer
         // /health before its database connection is actually ready), or give up
         // after timeoutMs. Returns null if it never got a definitive answer.
         async function waitForOnboardingStatus(timeoutMs = 20000) {
             const start = Date.now();
             while (Date.now() - start < timeoutMs) {
                 try {
-                    const res = await fetch(`${BACKEND_URL}/onboarding/verify`);
+                    const res = await fetch(`${BACKEND_URL}/linux/onboarding/verify`);
                     if (res.ok) {
                         const data = await res.json();
                         return !!data.onboarding_required;
