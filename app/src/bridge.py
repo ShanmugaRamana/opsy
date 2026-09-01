@@ -7,11 +7,12 @@ class Api:
     def __init__(self):
         self.splash_window = None
 
-    def splash_complete(self):
-        # Create the main app window
+    def splash_complete(self, onboarding_required=False):
+        # Create the main app window, routed to onboarding if the user hasn't set up yet
+        target_url = f'{FRONTEND_URL}/onboarding' if onboarding_required else FRONTEND_URL
         main_window = webview.create_window(
-            'Opsy', 
-            FRONTEND_URL,
+            'Opsy',
+            target_url,
             width=MAIN_WIDTH,
             height=MAIN_HEIGHT
         )

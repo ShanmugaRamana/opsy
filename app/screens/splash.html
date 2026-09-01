@@ -149,35 +149,66 @@
         const progressText = document.getElementById('progress-text');
         const statusText = document.getElementById('status-text');
 
-        const duration = 8000; // 8 seconds
+        const MIN_DURATION = 7000; // Splash must stay visible at least 7 seconds
+        const BACKEND_URL = 'http://localhost:8000';
         const startTime = Date.now();
 
-        const statuses = [
-            "Booting Core",
-            "Aligning Systems",
-            "Preparing Environment",
-            "Establishing Link"
-        ];
+        let checksReady = false;
+        let onboardingRequired = false;
+
+        // Poll the backend's health route until it responds, or give up after timeoutMs
+        async function waitForBackend(timeoutMs = 20000) {
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {
+                try {
+                    const res = await fetch(`${BACKEND_URL}/health`);
+                    if (res.ok) return;
+                } catch (e) {
+                    // Backend not up yet, keep retrying
+                }
+                await new Promise(r => setTimeout(r, 250));
+            }
+        }
+
+        async function runStartupChecks() {
+            statusText.innerText = 'Booting Core';
+            await waitForBackend();
+
+            statusText.innerText = 'Verifying Setup';
+            try {
+                const res = await fetch(`${BACKEND_URL}/onboarding/verify`);
+                const data = await res.json();
+                onboardingRequired = !!data.onboarding_required;
+            } catch (e) {
+                // If the check itself fails, fall through to the normal app
+                // rather than force onboarding on every failed check.
+                onboardingRequired = false;
+            }
+
+            statusText.innerText = 'Establishing Link';
+            checksReady = true;
+        }
+
+        runStartupChecks();
 
         function updateProgress() {
             const elapsed = Date.now() - startTime;
-            let percent = Math.min((elapsed / duration) * 100, 100);
+            const timeRatio = Math.min(elapsed / MIN_DURATION, 1);
+            const done = checksReady && timeRatio >= 1;
+
+            // Progress is time-driven so it always feels alive, but it holds
+            // just short of 100% until the real startup checks finish.
+            const percent = done ? 100 : Math.min(timeRatio, 0.96) * 100;
 
             progressBar.style.width = percent + '%';
             progressText.innerText = Math.floor(percent) + '%';
 
-            // Update the stylish status text
-            const statusIndex = Math.min(Math.floor((elapsed / duration) * statuses.length), statuses.length - 1);
-            if (statusText.innerText !== statuses[statusIndex]) {
-                statusText.innerText = statuses[statusIndex];
-            }
-
-            if (percent < 100) {
+            if (!done) {
                 requestAnimationFrame(updateProgress);
             } else {
-                // When 100% is reached, notify python to open the main app
+                // Notify python to open the main app (or onboarding, if required)
                 if (window.pywebview && window.pywebview.api) {
-                    window.pywebview.api.splash_complete();
+                    window.pywebview.api.splash_complete(onboardingRequired);
                 }
             }
         }
