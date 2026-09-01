@@ -2,6 +2,12 @@
 import webview
 import subprocess
 import os
+
+# Fix for WebKitGTK bugs in Linux VMs (like QEMU) 
+os.environ['WEBKIT_DISABLE_COMPOSITING_MODE'] = '1'
+os.environ['WEBKIT_DISABLE_DMABUF_RENDERER'] = '1'
+os.environ['LIBGL_ALWAYS_SOFTWARE'] = '1'
+
 from src.config import SPLASH_WIDTH, SPLASH_HEIGHT, SPLASH_BG_COLOR
 from src.utils import get_screen_path, get_center_position
 from src.bridge import Api
@@ -44,7 +50,7 @@ def main():
     api.splash_window = splash_window
     
     # Start the GUI event loop
-    webview.start()
+    webview.start(http_server=True)
 
 if __name__ == '__main__':
     main()
