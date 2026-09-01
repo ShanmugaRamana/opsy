@@ -51,8 +51,8 @@ body {
 }
 
 .sidebar.collapsed {
-    width: 48px;
-    padding: 0.7rem 0.5rem;
+    width: 56px;
+    padding: 0.7rem;
     border-right-color: transparent;
 }
 
@@ -125,6 +125,96 @@ body {
 
 .new-chat-btn:hover {
     border-color: #000000;
+}
+
+/* Sidebar Footer */
+.sidebar-footer {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    transition: border-color 0.3s ease;
+    overflow: hidden;
+}
+
+.user-profile {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.user-avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.user-info {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.user-name {
+    font-family: 'Clash Display', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    transition: opacity 0.2s ease;
+    line-height: 1.2;
+}
+
+.user-role {
+    font-family: 'Clash Display', sans-serif;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 120px;
+    transition: opacity 0.2s ease;
+}
+
+.settings-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.3rem;
+    border-radius: 4px;
+    transition: color 0.2s ease, background-color 0.2s ease;
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+.settings-btn:hover {
+    color: var(--text-main);
+    background-color: var(--bg-color);
+}
+
+.sidebar.collapsed .sidebar-footer {
+    padding-top: 1rem;
+    border-top-color: transparent;
+}
+
+.sidebar.collapsed .user-info {
+    display: none;
+    opacity: 0;
+}
+
+.sidebar.collapsed .settings-btn {
+    display: none;
 }
 
 /* Main Content */
