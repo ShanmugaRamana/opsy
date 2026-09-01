@@ -170,20 +170,35 @@
             }
         }
 
+        // Poll /onboarding/verify until it succeeds (the backend process can answer
+        // /health before its database connection is actually ready), or give up
+        // after timeoutMs. Returns null if it never got a definitive answer.
+        async function waitForOnboardingStatus(timeoutMs = 20000) {
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {
+                try {
+                    const res = await fetch(`${BACKEND_URL}/onboarding/verify`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        return !!data.onboarding_required;
+                    }
+                } catch (e) {
+                    // Database/backend not ready yet, keep retrying
+                }
+                await new Promise(r => setTimeout(r, 250));
+            }
+            return null;
+        }
+
         async function runStartupChecks() {
             statusText.innerText = 'Booting Core';
             await waitForBackend();
 
             statusText.innerText = 'Verifying Setup';
-            try {
-                const res = await fetch(`${BACKEND_URL}/onboarding/verify`);
-                const data = await res.json();
-                onboardingRequired = !!data.onboarding_required;
-            } catch (e) {
-                // If the check itself fails, fall through to the normal app
-                // rather than force onboarding on every failed check.
-                onboardingRequired = false;
-            }
+            const status = await waitForOnboardingStatus();
+            // If we never got a definitive answer, fail safe towards showing
+            // onboarding rather than silently skipping it.
+            onboardingRequired = status === null ? true : status;
 
             statusText.innerText = 'Establishing Link';
             checksReady = true;
