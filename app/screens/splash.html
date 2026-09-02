@@ -154,7 +154,7 @@
         const startTime = Date.now();
 
         let checksReady = false;
-        let onboardingRequired = false;
+        let targetScreen = 'home';
 
         // Poll the backend's health route until it responds, or give up after timeoutMs
         async function waitForBackend(timeoutMs = 20000) {
@@ -179,8 +179,7 @@
                 try {
                     const res = await fetch(`${BACKEND_URL}/linux/onboarding/verify`);
                     if (res.ok) {
-                        const data = await res.json();
-                        return !!data.onboarding_required;
+                        return await res.json();
                     }
                 } catch (e) {
                     // Database/backend not ready yet, keep retrying
@@ -197,8 +196,14 @@
             statusText.innerText = 'Verifying Setup';
             const status = await waitForOnboardingStatus();
             // If we never got a definitive answer, fail safe towards showing
-            // onboarding rather than silently skipping it.
-            onboardingRequired = status === null ? true : status;
+            // onboarding rather than silently skipping straight to home.
+            if (status === null || status.onboarding_required) {
+                targetScreen = 'onboarding';
+            } else if (status.setup_required) {
+                targetScreen = 'setup';
+            } else {
+                targetScreen = 'home';
+            }
 
             statusText.innerText = 'Establishing Link';
             checksReady = true;
@@ -221,9 +226,9 @@
             if (!done) {
                 requestAnimationFrame(updateProgress);
             } else {
-                // Notify python to open the main app (or onboarding, if required)
+                // Notify python which screen to open (onboarding, setup, or home)
                 if (window.pywebview && window.pywebview.api) {
-                    window.pywebview.api.splash_complete(onboardingRequired);
+                    window.pywebview.api.splash_complete(targetScreen);
                 }
             }
         }

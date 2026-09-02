@@ -154,7 +154,7 @@ document.getElementById('final-continue-btn').addEventListener('click', async ()
             throw new Error(`Request failed with status ${res.status}`);
         }
 
-        window.location.href = '/';
+        window.location.href = '/setup';
     } catch (e) {
         errorText.innerText = 'Could not save your details. Please try again.';
         errorText.style.display = 'block';
