@@ -1,3 +1,11 @@
+# OS & Editors
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment Variables
 .env
 venv/
 venv
