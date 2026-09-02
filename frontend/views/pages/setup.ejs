@@ -1,0 +1,327 @@
+<div class="onboarding-container" style="justify-content: flex-start; padding-top: 15vh;">
+    <h2 class="onboarding-heading" style="margin-bottom: 2.5rem; font-size: 2rem;">Setup Models</h2>
+
+    <div class="setup-switcher"
+        style="position: relative; display: flex; background-color: var(--card-bg); padding: 0.3rem; border-radius: 9999px; border: 1px solid var(--border); margin-bottom: 3rem;">
+        <div id="setup-slider"
+            style="position: absolute; top: 0.3rem; bottom: 0.3rem; left: 0.3rem; width: 140px; background-color: #000000; border-radius: 9999px; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+        </div>
+        <button class="setup-btn active"
+            style="position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 140px; padding: 0.6rem 0; border-radius: 9999px; border: none; background: transparent; color: #ffffff; font-family: 'Clash Display', sans-serif; font-size: 1rem; cursor: pointer; transition: color 0.3s ease;">Local
+            Models</button>
+        <button class="setup-btn"
+            style="position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 140px; padding: 0.6rem 0; border-radius: 9999px; border: none; background: transparent; color: var(--text-muted); font-family: 'Clash Display', sans-serif; font-size: 1rem; cursor: pointer; transition: color 0.3s ease;">Cloud
+            Models</button>
+    </div>
+
+    <!-- Content for Local Models -->
+    <div id="local-models-content"
+        style="width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: stretch;">
+        <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; width: 100%;">
+            <p
+                style="font-family: 'Clash Display', sans-serif; font-size: 1.1rem; color: var(--text-main); margin: 0; font-weight: 500;">
+                Select Provider</p>
+
+            <div class="custom-dropdown" id="local-provider-dropdown" style="width: 180px;">
+                <div class="custom-dropdown-trigger"
+                    style="background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem;">
+                    <span class="selected-text"
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.95rem; color: var(--text-main);">llama.cpp</span>
+                    <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m6 9 6 6 6-6" />
+                    </svg>
+                </div>
+                <div class="custom-dropdown-options" style="text-align: left; border-radius: 8px;">
+                    <div class="custom-option" data-value="llama-cpp" style="text-align: left; font-size: 0.95rem;">
+                        llama.cpp</div>
+                    <div class="custom-option" data-value="ollama" style="text-align: left; font-size: 0.95rem;">Ollama
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="models-list-llama-cpp" class="models-list"
+            style="width: 100%; margin-top: 2rem; display: flex; flex-direction: column; gap: 0.75rem;">
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Llama
+                        3 8B</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Default
+                        Chat Model</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Mistral
+                        7B</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Fast
+                        Reasoning</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Phi-3
+                        Mini</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Lightweight
+                        & Efficient</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">CodeLlama
+                        7B</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Code
+                        Assistant</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+        </div>
+
+        <div id="models-list-ollama" class="models-list"
+            style="width: 100%; margin-top: 2rem; display: none; flex-direction: column; gap: 0.75rem;">
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Llama
+                        3 (Ollama)</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">llama3:8b</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Mistral
+                        (Ollama)</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">mistral:7b</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Gemma
+                        2 (Ollama)</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">gemma2:9b</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+
+            <div class="model-item"
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                <div style="display: flex; flex-direction: column;">
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Qwen
+                        2 (Ollama)</span>
+                    <span
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">qwen2:7b</span>
+                </div>
+                <button
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                    onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                    onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Content for Cloud Models -->
+    <div id="cloud-models-content"
+        style="width: 100%; max-width: 480px; display: none; flex-direction: column; align-items: stretch;">
+        <div
+            style="display: flex; justify-content: space-between; align-items: center; margin-top: 1.5rem; width: 100%;">
+            <p
+                style="font-family: 'Clash Display', sans-serif; font-size: 1.1rem; color: var(--text-main); margin: 0; font-weight: 500;">
+                Select Provider</p>
+
+            <div class="custom-dropdown" id="cloud-provider-dropdown" style="width: 180px;">
+                <div class="custom-dropdown-trigger"
+                    style="background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem;">
+                    <span class="selected-text"
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.95rem; color: var(--text-muted);">Select Provider</span>
+                    <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <path d="m6 9 6 6 6-6" />
+                    </svg>
+                </div>
+                <div class="custom-dropdown-options" style="text-align: left; border-radius: 8px;">
+                    <div class="custom-option" data-value="anthropic" style="text-align: left; font-size: 0.95rem;">
+                        Anthropic</div>
+                    <div class="custom-option" data-value="openai" style="text-align: left; font-size: 0.95rem;">
+                        OpenAI</div>
+                    <div class="custom-option" data-value="gemini" style="text-align: left; font-size: 0.95rem;">
+                        Gemini</div>
+                    <div class="custom-option" data-value="openrouter" style="text-align: left; font-size: 0.95rem;">
+                        OpenRouter</div>
+                    <div class="custom-option" data-value="groq" style="text-align: left; font-size: 0.95rem;">
+                        Groq</div>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+</div>
+
+<script>
+    const setupBtns = document.querySelectorAll('.setup-btn');
+    const slider = document.getElementById('setup-slider');
+    const localContent = document.getElementById('local-models-content');
+    const cloudContent = document.getElementById('cloud-models-content');
+
+    // Hover effects for inactive buttons
+    setupBtns.forEach(btn => {
+        btn.addEventListener('mouseover', function () {
+            if (!this.classList.contains('active')) {
+                this.style.color = 'var(--text-main)';
+            }
+        });
+        btn.addEventListener('mouseout', function () {
+            if (!this.classList.contains('active')) {
+                this.style.color = 'var(--text-muted)';
+            }
+        });
+    });
+
+    setupBtns[0].addEventListener('click', () => {
+        if (setupBtns[0].classList.contains('active')) return;
+
+        setupBtns[0].classList.add('active');
+        setupBtns[0].style.color = '#ffffff';
+
+        setupBtns[1].classList.remove('active');
+        setupBtns[1].style.color = 'var(--text-muted)';
+
+        slider.style.transform = 'translateX(0)';
+
+        // Fade transition for content
+        cloudContent.style.opacity = '0';
+        setTimeout(() => {
+            cloudContent.style.display = 'none';
+            localContent.style.display = 'flex';
+            // Trigger reflow
+            void localContent.offsetWidth;
+            localContent.style.opacity = '1';
+        }, 150);
+    });
+
+    setupBtns[1].addEventListener('click', () => {
+        if (setupBtns[1].classList.contains('active')) return;
+
+        setupBtns[1].classList.add('active');
+        setupBtns[1].style.color = '#ffffff';
+
+        setupBtns[0].classList.remove('active');
+        setupBtns[0].style.color = 'var(--text-muted)';
+
+        slider.style.transform = 'translateX(140px)';
+
+        localContent.style.opacity = '0';
+        setTimeout(() => {
+            localContent.style.display = 'none';
+            cloudContent.style.display = 'flex';
+            // Trigger reflow
+            void cloudContent.offsetWidth;
+            cloudContent.style.opacity = '1';
+        }, 150);
+    });
+
+    // Set initial content transition styling
+    localContent.style.transition = 'opacity 0.15s ease';
+    cloudContent.style.transition = 'opacity 0.15s ease';
+    cloudContent.style.opacity = '0';
+
+    // Dropdown logic
+    const dropdowns = document.querySelectorAll('.custom-dropdown');
+    dropdowns.forEach(dropdown => {
+        const trigger = dropdown.querySelector('.custom-dropdown-trigger');
+        const options = dropdown.querySelectorAll('.custom-option');
+        const selectedText = dropdown.querySelector('.selected-text');
+
+        // Set initial selected value
+        if (dropdown.id === 'local-provider-dropdown') {
+            dropdown.dataset.selectedValue = "llama-cpp";
+        } else {
+            dropdown.dataset.selectedValue = "";
+        }
+
+        trigger.addEventListener('click', (e) => {
+            e.stopPropagation();
+            // Close other dropdowns
+            dropdowns.forEach(d => { if (d !== dropdown) d.classList.remove('open') });
+            dropdown.classList.toggle('open');
+        });
+
+        options.forEach(option => {
+            option.addEventListener('click', () => {
+                selectedText.innerText = option.innerText;
+                selectedText.style.color = 'var(--text-main)';
+                const value = option.dataset.value;
+                dropdown.dataset.selectedValue = value;
+                dropdown.classList.remove('open');
+
+                if (dropdown.id === 'local-provider-dropdown') {
+                    if (value === 'llama-cpp') {
+                        document.getElementById('models-list-llama-cpp').style.display = 'flex';
+                        document.getElementById('models-list-ollama').style.display = 'none';
+                    } else if (value === 'ollama') {
+                        document.getElementById('models-list-llama-cpp').style.display = 'none';
+                        document.getElementById('models-list-ollama').style.display = 'flex';
+                    }
+                }
+            });
+        });
+    });
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', () => {
+        dropdowns.forEach(dropdown => dropdown.classList.remove('open'));
+    });
+</script>
