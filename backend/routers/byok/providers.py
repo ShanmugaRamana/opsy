@@ -31,14 +31,6 @@ def _check_gemini(api_key):
     )
 
 
-def _check_openrouter(api_key):
-    return httpx.get(
-        "https://openrouter.ai/api/v1/key",
-        headers={"Authorization": f"Bearer {api_key}"},
-        timeout=TIMEOUT,
-    )
-
-
 def _check_groq(api_key):
     return httpx.get(
         "https://api.groq.com/openai/v1/models",
@@ -51,7 +43,6 @@ _CHECKS = {
     "anthropic": _check_anthropic,
     "openai": _check_openai,
     "gemini": _check_gemini,
-    "openrouter": _check_openrouter,
     "groq": _check_groq,
 }
 

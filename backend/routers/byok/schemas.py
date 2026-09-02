@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-VALID_PROVIDERS = ("anthropic", "openai", "gemini", "openrouter", "groq")
+VALID_PROVIDERS = ("anthropic", "openai", "gemini", "groq")
 
 
 class ApiKeyPayload(BaseModel):

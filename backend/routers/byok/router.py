@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from core.crypto import encrypt
 from core.db import get_connection
+from routers.models.queries import sync_provider_catalog
 from . import providers
 from .queries import list_keys, upsert_key
 from .schemas import ApiKeyPayload, ApiKeyVerifyResult, ConfiguredProvider, VALID_PROVIDERS
@@ -31,8 +32,9 @@ def verify_and_store_key(payload: ApiKeyPayload):
     conn = get_connection()
     try:
         upsert_key(conn, payload.provider, encrypted, last4)
+        sync_provider_catalog(conn, payload.provider)
         conn.commit()
-        logger.info(f"stored encrypted key for {payload.provider}")
+        logger.info(f"stored encrypted key and refreshed model catalog for {payload.provider}")
     except Exception as e:
         conn.rollback()
         raise HTTPException(status_code=400, detail=str(e))
