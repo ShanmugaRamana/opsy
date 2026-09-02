@@ -5,6 +5,16 @@
 # Each entry is (model_id, display_name). model_id is the API-facing identifier;
 # display_name is what the UI shows.
 
+# How each provider key should be displayed in the UI. Frontend has no hardcoded
+# knowledge of providers — it just reads whatever comes back from GET /linux/models.
+PROVIDER_DISPLAY_NAMES = {
+    "groq": "Groq",
+    "anthropic": "Anthropic",
+    "openai": "OpenAI",
+    "gemini": "Gemini",
+    "ollama": "Ollama",
+}
+
 PROVIDER_CATALOG = {
     "groq": [
         ("openai/gpt-oss-120b", "GPT OSS 120B"),

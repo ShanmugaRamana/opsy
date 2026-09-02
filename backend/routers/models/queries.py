@@ -1,6 +1,6 @@
 import psycopg2.extras
 
-from .catalog import PROVIDER_CATALOG
+from .catalog import PROVIDER_CATALOG, PROVIDER_DISPLAY_NAMES
 
 CREATE_MODELS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS models (
@@ -43,4 +43,9 @@ def list_models(conn, provider=None):
             )
         else:
             cur.execute("SELECT provider, model_id, display_name FROM models ORDER BY provider, display_name")
-        return cur.fetchall()
+        rows = cur.fetchall()
+
+    for row in rows:
+        row["provider_display_name"] = PROVIDER_DISPLAY_NAMES.get(row["provider"], row["provider"])
+
+    return rows
