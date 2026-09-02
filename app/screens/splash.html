@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starting Opsy</title>
+    <style>
+        @font-face {
+            font-family: 'Clash Display';
+            src: url('assets/fonts/ClashDisplay/Fonts/WEB/fonts/ClashDisplay-Regular.woff2') format('woff2');
+            font-weight: 400;
+            font-style: normal;
+            font-display: swap;
+        }
+
+        @font-face {
+            font-family: 'Playfair Display';
+            src: url('assets/fonts/Playfair_Display/PlayfairDisplay-VariableFont_wght.ttf') format('truetype');
+            font-style: normal;
+            font-display: swap;
+        }
+
+        :root {
+            /* Pale background */
+            --bg-color: #faf5ea;
+            --text-color: #0f172a;
+            --accent-color: #000000;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+
+            /* Allow dragging the frameless window */
+            -webkit-app-region: drag;
+            user-select: none;
+            overflow: hidden;
+
+            /* Subtle border for light theme */
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            box-sizing: border-box;
+
+            /* Smooth fade-in to hide the sudden HTML paint */
+            opacity: 0;
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+
+        .logo-image {
+            width: 48px;
+            /* Adjust size as needed */
+            height: 48px;
+            object-fit: contain;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 2.7rem;
+            /* Slightly larger since there's no subquote */
+            font-family: 'Clash Display', sans-serif;
+            font-weight: 400;
+            letter-spacing: -0.05em;
+            color: #0f172a;
+        }
+
+        .status-text {
+            margin-top: 4px;
+            font-size: 0.95rem;
+            font-family: 'Playfair Display', serif;
+            font-style: normal;
+            color: #64748b;
+            text-align: center;
+        }
+
+        /* Progress Bar attached to the very bottom */
+        .progress-container {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            background-color: transparent;
+            /* No separate background track */
+            overflow: visible;
+            /* Changed to visible so text can float above */
+        }
+
+        .progress-bar {
+            position: relative;
+            height: 100%;
+            width: 0%;
+            background-color: var(--accent-color);
+            /* Black progress */
+            border-radius: 0;
+            /* Sharp edges */
+        }
+
+        .progress-text {
+            position: absolute;
+            right: 0;
+            bottom: 12px;
+            font-family: 'Clash Display', 'Segoe UI', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 400;
+            color: var(--text-color);
+            margin-right: 4px;
+            /* Keeps it strictly inside the bar bounds so it doesn't overflow at 100% */
+        }
+    </style>
+</head>
+
+<body>
+    <div class="logo-container">
+        <img src="assets/images/logo.png" alt="Opsy Logo" class="logo-image">
+        <h1>Opsy</h1>
+    </div>
+
+    <p id="status-text" class="status-text">Booting Core...</p>
+
+    <div class="progress-container">
+        <div class="progress-bar" id="progress-bar">
+            <span class="progress-text" id="progress-text">0%</span>
+        </div>
+    </div>
+
+    <script>
+        const progressBar = document.getElementById('progress-bar');
+        const progressText = document.getElementById('progress-text');
+        const statusText = document.getElementById('status-text');
+
+        const MIN_DURATION = 7000; // Splash must stay visible at least 7 seconds
+        const BACKEND_URL = 'http://localhost:8000';
+        const startTime = Date.now();
+
+        let checksReady = false;
+        let onboardingRequired = false;
+
+        // Poll the backend's health route until it responds, or give up after timeoutMs
+        async function waitForBackend(timeoutMs = 20000) {
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {
+                try {
+                    const res = await fetch(`${BACKEND_URL}/health`);
+                    if (res.ok) return;
+                } catch (e) {
+                    // Backend not up yet, keep retrying
+                }
+                await new Promise(r => setTimeout(r, 250));
+            }
+        }
+
+        // Poll /linux/onboarding/verify until it succeeds (the backend process can answer
+        // /health before its database connection is actually ready), or give up
+        // after timeoutMs. Returns null if it never got a definitive answer.
+        async function waitForOnboardingStatus(timeoutMs = 20000) {
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {
+                try {
+                    const res = await fetch(`${BACKEND_URL}/linux/onboarding/verify`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        return !!data.onboarding_required;
+                    }
+                } catch (e) {
+                    // Database/backend not ready yet, keep retrying
+                }
+                await new Promise(r => setTimeout(r, 250));
+            }
+            return null;
+        }
+
+        async function runStartupChecks() {
+            statusText.innerText = 'Booting Core';
+            await waitForBackend();
+
+            statusText.innerText = 'Verifying Setup';
+            const status = await waitForOnboardingStatus();
+            // If we never got a definitive answer, fail safe towards showing
+            // onboarding rather than silently skipping it.
+            onboardingRequired = status === null ? true : status;
+
+            statusText.innerText = 'Establishing Link';
+            checksReady = true;
+        }
+
+        runStartupChecks();
+
+        function updateProgress() {
+            const elapsed = Date.now() - startTime;
+            const timeRatio = Math.min(elapsed / MIN_DURATION, 1);
+            const done = checksReady && timeRatio >= 1;
+
+            // Progress is time-driven so it always feels alive, but it holds
+            // just short of 100% until the real startup checks finish.
+            const percent = done ? 100 : Math.min(timeRatio, 0.96) * 100;
+
+            progressBar.style.width = percent + '%';
+            progressText.innerText = Math.floor(percent) + '%';
+
+            if (!done) {
+                requestAnimationFrame(updateProgress);
+            } else {
+                // Notify python to open the main app (or onboarding, if required)
+                if (window.pywebview && window.pywebview.api) {
+                    window.pywebview.api.splash_complete(onboardingRequired);
+                }
+            }
+        }
+
+        requestAnimationFrame(updateProgress);
+    </script>
+</body>
+
+</html>
