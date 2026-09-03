@@ -1,15 +1,10 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 
-from core.crypto import decrypt
-from core.db import get_connection
-from routers.byok.queries import get_key
-from routers.byok.schemas import VALID_PROVIDERS
-from .clients import ProviderCallError, call_provider
-from .prompts import BASE_SYSTEM_PROMPT
+from .core import run_orchestrator
 from .schemas import OrchestratorRequest, OrchestratorResponse
-from .xml_output import parse_response
 
 logger = logging.getLogger("orchestrator")
 
@@ -17,33 +12,43 @@ router = APIRouter(prefix="/linux/orchestrator", tags=["orchestrator"])
 
 
 @router.post("/run", response_model=OrchestratorResponse)
-def run(payload: OrchestratorRequest):
-    if payload.provider not in VALID_PROVIDERS:
-        raise HTTPException(status_code=400, detail=f"Unknown provider: {payload.provider}")
+async def run(payload: OrchestratorRequest):
+    final_event = None
 
-    conn = get_connection()
+    async for event in run_orchestrator(payload):
+        if event["type"] == "error":
+            raise HTTPException(status_code=event.get("status", 502), detail=event["detail"])
+        if event["type"] == "final":
+            final_event = event
+
+    if final_event is None:
+        raise HTTPException(status_code=502, detail="orchestrator produced no result")
+
+    return OrchestratorResponse(
+        provider=payload.provider,
+        model_id=payload.model_id,
+        mode=final_event["mode"],
+        thinking=final_event.get("thinking"),
+        content=final_event.get("content"),
+        raw_xml=final_event.get("raw_xml"),
+        disk_report=final_event.get("disk_report"),
+        commands_run=final_event.get("commands_run", []),
+    )
+
+
+@router.websocket("/ws")
+async def orchestrator_ws(websocket: WebSocket):
+    await websocket.accept()
     try:
-        key_row = get_key(conn, payload.provider)
-    finally:
-        conn.close()
+        while True:
+            payload = await websocket.receive_json()
+            try:
+                request = OrchestratorRequest(**payload)
+            except ValidationError as e:
+                await websocket.send_json({"type": "error", "detail": str(e)})
+                continue
 
-    if key_row is None:
-        raise HTTPException(status_code=404, detail=f"No stored API key for provider: {payload.provider}")
-
-    api_key = decrypt(key_row["api_key_encrypted"])
-
-    try:
-        raw_text = call_provider(payload.provider, api_key, payload.model_id, BASE_SYSTEM_PROMPT, payload.message)
-    except ProviderCallError as e:
-        logger.error(f"{payload.provider} call failed: {e}")
-        raise HTTPException(status_code=502, detail=f"{payload.provider} call failed: {e}")
-
-    thinking, content = parse_response(raw_text)
-
-    return {
-        "provider": payload.provider,
-        "model_id": payload.model_id,
-        "thinking": thinking,
-        "content": content,
-        "raw_xml": raw_text,
-    }
+            async for event in run_orchestrator(request):
+                await websocket.send_json(event)
+    except WebSocketDisconnect:
+        logger.info("orchestrator ws client disconnected")

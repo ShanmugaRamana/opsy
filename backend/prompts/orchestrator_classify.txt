@@ -1,0 +1,3 @@
+Classify the user's message into exactly one category. Reply with only the single word "disk" or "general" and nothing else.
+
+Use "disk" for anything about disk space, storage capacity, running out of space, what's taking up space, cleaning up files, partitions, or mounted drives. Otherwise use "general".

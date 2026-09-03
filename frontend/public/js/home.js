@@ -232,32 +232,127 @@ function appendMessage(role, text) {
     return bubble;
 }
 
-async function sendMessage() {
+// ---- Orchestrator WebSocket: one persistent connection, reused across messages ----
+
+const WS_URL = `${BACKEND_URL.replace('http', 'ws')}/linux/orchestrator/ws`;
+let orchestratorSocket = null;
+
+const SEVERITY_COLORS = { plenty: '#2ecc71', moderate: '#f1c40f', tight: '#e67e22', critical: '#e74c3c' };
+
+let activeTrace = null;
+let traceRows = {};
+
+function startTrace() {
+    const details = document.createElement('details');
+    details.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.72rem; color: var(--text-secondary, #888); margin-top: 0.25rem;';
+    const summary = document.createElement('summary');
+    summary.style.cursor = 'pointer';
+    summary.innerText = '🔍 How I checked this';
+    details.appendChild(summary);
+    chatLog.appendChild(details);
+    activeTrace = details;
+    traceRows = {};
+    return details;
+}
+
+function traceRow(command, label) {
+    if (!activeTrace) startTrace();
+    const row = document.createElement('div');
+    row.style.cssText = 'padding: 0.15rem 0; white-space: pre-wrap; word-break: break-word;';
+    row.innerText = `Running: ${label}…`;
+    activeTrace.appendChild(row);
+    traceRows[command] = row;
+    return row;
+}
+
+function renderDiskReport(report) {
+    if (!report) return;
+
+    if (report.summary) appendMessage('assistant', report.summary);
+
+    if (report.percent_used != null) {
+        const barWrap = document.createElement('div');
+        barWrap.style.cssText = 'width: 100%; max-width: 400px; margin: 0.25rem 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; height: 10px;';
+        const bar = document.createElement('div');
+        const pct = Math.min(100, Math.max(0, report.percent_used));
+        const color = SEVERITY_COLORS[report.severity] || '#888';
+        bar.style.cssText = `height: 100%; width: ${pct}%; background: ${color};`;
+        barWrap.appendChild(bar);
+        chatLog.appendChild(barWrap);
+    }
+
+    if (report.top_consumers && report.top_consumers.length > 0) {
+        const list = document.createElement('div');
+        list.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.8rem; margin: 0.25rem 0; white-space: pre-wrap;';
+        list.innerText = report.top_consumers
+            .map((c) => `${c.label}: ${c.size_gb != null ? c.size_gb + ' GB' : '?'}`)
+            .join('\n');
+        chatLog.appendChild(list);
+    }
+
+    if (report.suggestion) appendMessage('thinking', `💡 ${report.suggestion}`);
+}
+
+function handleOrchestratorEvent(rawEvent) {
+    let data;
+    try {
+        data = JSON.parse(rawEvent.data);
+    } catch (e) {
+        return;
+    }
+
+    switch (data.type) {
+        case 'tool_call':
+            traceRow(data.command, data.label);
+            break;
+        case 'tool_result': {
+            const row = traceRows[data.command];
+            if (row) row.innerText = `${data.label}: ${data.output}`;
+            break;
+        }
+        case 'final':
+            activeTrace = null;
+            if (data.mode === 'disk') {
+                renderDiskReport(data.disk_report);
+            } else {
+                if (data.thinking) appendMessage('thinking', data.thinking);
+                appendMessage('assistant', data.content);
+            }
+            break;
+        case 'error':
+            activeTrace = null;
+            appendMessage('error', `Error: ${data.detail}`);
+            break;
+    }
+}
+
+function ensureSocket(onReady) {
+    if (orchestratorSocket && orchestratorSocket.readyState === WebSocket.OPEN) {
+        onReady();
+        return;
+    }
+    if (!orchestratorSocket || orchestratorSocket.readyState === WebSocket.CLOSED) {
+        orchestratorSocket = new WebSocket(WS_URL);
+        orchestratorSocket.addEventListener('message', handleOrchestratorEvent);
+        orchestratorSocket.addEventListener('error', () => appendMessage('error', 'Connection error.'));
+    }
+    orchestratorSocket.addEventListener('open', onReady, { once: true });
+}
+
+function sendMessage() {
     const message = chatInput.value.trim();
     if (!message || !selectedProvider || !selectedModelId) return;
 
     chatInput.value = '';
     appendMessage('user', message);
 
-    try {
-        const res = await fetch(`${BACKEND_URL}/linux/orchestrator/run`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                provider: selectedProvider,
-                model_id: selectedModelId,
-                message,
-            }),
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || `request failed: ${res.status}`);
-
-        if (data.thinking) appendMessage('thinking', data.thinking);
-        appendMessage('assistant', data.content);
-    } catch (e) {
-        appendMessage('error', `Error: ${e.message}`);
-    }
+    ensureSocket(() => {
+        orchestratorSocket.send(JSON.stringify({
+            provider: selectedProvider,
+            model_id: selectedModelId,
+            message,
+        }));
+    });
 }
 
 sendBtn.addEventListener('click', sendMessage);

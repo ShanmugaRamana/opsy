@@ -4,6 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routers import byok, hardware, health, models, onboarding, orchestrator, root, system, user
+from routers.orchestrator.agents.disk.router import router as disk_agent_router
+from routers.tools.disk import router as disk_tools_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s - %(message)s")
 
@@ -25,3 +27,5 @@ app.include_router(hardware.router)
 app.include_router(byok.router)
 app.include_router(models.router)
 app.include_router(orchestrator.router)
+app.include_router(disk_tools_router)
+app.include_router(disk_agent_router)

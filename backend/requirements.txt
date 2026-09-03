@@ -6,3 +6,5 @@ psutil
 httpx
 cryptography
 anthropic
+anyio
+websockets

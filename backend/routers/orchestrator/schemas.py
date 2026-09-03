@@ -7,9 +7,33 @@ class OrchestratorRequest(BaseModel):
     message: str = Field(min_length=1)
 
 
+class CommandRun(BaseModel):
+    command: str
+    label: str
+    output: str
+
+
+class TopConsumer(BaseModel):
+    label: str
+    size_gb: float | None = None
+
+
+class DiskReport(BaseModel):
+    summary: str
+    free_gb: float | None = None
+    total_gb: float | None = None
+    percent_used: float | None = None
+    severity: str | None = None
+    top_consumers: list[TopConsumer] = []
+    suggestion: str | None = None
+
+
 class OrchestratorResponse(BaseModel):
     provider: str
     model_id: str
-    thinking: str | None
-    content: str
-    raw_xml: str
+    mode: str
+    thinking: str | None = None
+    content: str | None = None
+    raw_xml: str | None = None
+    disk_report: DiskReport | None = None
+    commands_run: list[CommandRun] = []

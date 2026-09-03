@@ -8,10 +8,10 @@ class ProviderCallError(Exception):
     """Raised when a provider's completion call fails (auth, network, or unexpected shape)."""
 
 
-def _call_anthropic(api_key, model_id, system_prompt, message):
-    client = anthropic.Anthropic(api_key=api_key)
+async def _call_anthropic(api_key, model_id, system_prompt, message):
+    client = anthropic.AsyncAnthropic(api_key=api_key)
     try:
-        response = client.messages.create(
+        response = await client.messages.create(
             model=model_id,
             max_tokens=16000,
             system=system_prompt,
@@ -26,20 +26,20 @@ def _call_anthropic(api_key, model_id, system_prompt, message):
     raise ProviderCallError("anthropic response had no text block")
 
 
-def _call_openai_compatible(base_url, api_key, model_id, system_prompt, message):
+async def _call_openai_compatible(base_url, api_key, model_id, system_prompt, message):
     try:
-        response = httpx.post(
-            base_url,
-            headers={"Authorization": f"Bearer {api_key}"},
-            json={
-                "model": model_id,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": message},
-                ],
-            },
-            timeout=TIMEOUT,
-        )
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            response = await client.post(
+                base_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                json={
+                    "model": model_id,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": message},
+                    ],
+                },
+            )
         response.raise_for_status()
         data = response.json()
         return data["choices"][0]["message"]["content"]
@@ -47,29 +47,29 @@ def _call_openai_compatible(base_url, api_key, model_id, system_prompt, message)
         raise ProviderCallError(str(e)) from e
 
 
-def _call_openai(api_key, model_id, system_prompt, message):
-    return _call_openai_compatible(
+async def _call_openai(api_key, model_id, system_prompt, message):
+    return await _call_openai_compatible(
         "https://api.openai.com/v1/chat/completions", api_key, model_id, system_prompt, message
     )
 
 
-def _call_groq(api_key, model_id, system_prompt, message):
-    return _call_openai_compatible(
+async def _call_groq(api_key, model_id, system_prompt, message):
+    return await _call_openai_compatible(
         "https://api.groq.com/openai/v1/chat/completions", api_key, model_id, system_prompt, message
     )
 
 
-def _call_gemini(api_key, model_id, system_prompt, message):
+async def _call_gemini(api_key, model_id, system_prompt, message):
     try:
-        response = httpx.post(
-            f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent",
-            params={"key": api_key},
-            json={
-                "system_instruction": {"parts": [{"text": system_prompt}]},
-                "contents": [{"role": "user", "parts": [{"text": message}]}],
-            },
-            timeout=TIMEOUT,
-        )
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            response = await client.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent",
+                params={"key": api_key},
+                json={
+                    "system_instruction": {"parts": [{"text": system_prompt}]},
+                    "contents": [{"role": "user", "parts": [{"text": message}]}],
+                },
+            )
         response.raise_for_status()
         data = response.json()
         return data["candidates"][0]["content"]["parts"][0]["text"]
@@ -85,8 +85,8 @@ _CLIENTS = {
 }
 
 
-def call_provider(provider, api_key, model_id, system_prompt, message):
+async def call_provider(provider, api_key, model_id, system_prompt, message):
     client = _CLIENTS.get(provider)
     if client is None:
         raise ProviderCallError(f"unknown provider: {provider}")
-    return client(api_key, model_id, system_prompt, message)
+    return await client(api_key, model_id, system_prompt, message)
