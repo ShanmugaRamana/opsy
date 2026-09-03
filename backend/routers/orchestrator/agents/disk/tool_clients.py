@@ -33,6 +33,19 @@ MAX_TOOL_ROUNDS = 4
 MAX_TOKENS = 16000
 _HTTP_TIMEOUT = 120.0
 
+# Sent back to the model when a round produces neither a tool call nor the final report - weaker
+# models sometimes narrate their intent ("Let me check disk usage...") and then just stop without
+# following through. Without this, that narration would be taken as the final answer.
+NUDGE_MESSAGE = (
+    "You did not call run_disk_command or provide your final answer. Either call the tool now for "
+    "whatever you still need to check, or if you already have enough information, respond with ONLY "
+    "the <disk_report> XML and nothing else."
+)
+
+
+def _has_report(text):
+    return "<disk_report" in (text or "").lower()
+
 INTERNAL_API_BASE = os.getenv("INTERNAL_API_BASE", "http://127.0.0.1:8000")
 
 
@@ -192,8 +205,13 @@ async def _run_anthropic(api_key, model_id, message):
             final_text = text
 
         if not tool_use_blocks:
-            final_text = text
-            break
+            if _has_report(text) or round_index == MAX_TOOL_ROUNDS:
+                final_text = text
+                break
+            # Narrated but never called the tool or gave a report - nudge it and try again.
+            messages.append({"role": "assistant", "content": response.content})
+            messages.append({"role": "user", "content": NUDGE_MESSAGE})
+            continue
 
         messages.append({"role": "assistant", "content": response.content})
         tool_results = []
@@ -349,8 +367,13 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
 
         calls = result.get("tool_calls") or []
         if not calls:
-            final_text = result.get("text", "") or final_text
-            break
+            if _has_report(result.get("text")) or round_index == MAX_TOOL_ROUNDS:
+                final_text = result.get("text", "") or final_text
+                break
+            # Narrated but never called the tool or gave a report - nudge it and try again.
+            messages.append({"role": "assistant", "content": result.get("text") or ""})
+            messages.append({"role": "user", "content": NUDGE_MESSAGE})
+            continue
 
         messages.append({
             "role": "assistant",
@@ -521,8 +544,13 @@ async def _run_gemini(api_key, model_id, message):
         function_calls = [part["functionCall"] for part in parts if "functionCall" in part]
 
         if not function_calls:
-            final_text = result.get("text", "") or final_text
-            break
+            if _has_report(result.get("text")) or round_index == MAX_TOOL_ROUNDS:
+                final_text = result.get("text", "") or final_text
+                break
+            # Narrated but never called the tool or gave a report - nudge it and try again.
+            contents.append({"role": "model", "parts": parts or [{"text": result.get("text", "")}]})
+            contents.append({"role": "user", "parts": [{"text": NUDGE_MESSAGE}]})
+            continue
 
         contents.append({"role": "model", "parts": parts})
         response_parts = []
