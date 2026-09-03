@@ -664,6 +664,13 @@ function closeTrace(keepOpen) {
 function friendlyError(detail) {
     const text = String(detail || 'Something went wrong.');
 
+    // Local-provider failures (Ollama unreachable) are already a plain, actionable sentence from the
+    // backend - unlike a cloud 401, there is no key to "check in setup", so this returns as-is rather
+    // than falling into that copy below.
+    if (/ollama isn'?t (running|installed)/i.test(text)) {
+        return text;
+    }
+
     if (/rate.?limit|\b429\b|too many requests/i.test(text)) {
         const wait = text.match(/try again in ([0-9.]+)\s*s/i);
         const model = text.match(/model `([^`]+)`/);
@@ -1137,6 +1144,12 @@ function handleOrchestratorEvent(rawEvent) {
         case 'started':
             setTurnInProgress(true);
             startTrace();
+            break;
+        case 'model_loading':
+            // Local-provider only: a model not already resident in Ollama can take a while to load
+            // before the first token arrives. Purely additive to the trace header - a cloud turn
+            // never emits this.
+            setTraceHeader(`Loading ${data.model_id}…`);
             break;
         case 'session_created':
             currentSessionId = data.session_id;

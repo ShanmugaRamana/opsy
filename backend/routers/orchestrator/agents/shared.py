@@ -8,6 +8,7 @@ command tool route and does not care which agent asked.
 
 Moving these out changed no behaviour; the disk agent's loops call exactly what they called before.
 """
+import json
 import logging
 import os
 import re
@@ -15,6 +16,7 @@ import re
 import httpx
 
 from routers.orchestrator import permissions
+from routers.orchestrator.ratelimit import MAX_TRANSIENT_RETRIES, transient_delay, wait_before_transient_retry
 from routers.orchestrator.tools.command.tool import validate_argv
 
 logger = logging.getLogger("orchestrator.agents")
@@ -238,6 +240,13 @@ def openai_command_tool(primary_tool):
     }
 
 
+def ollama_command_tool(primary_tool):
+    # Ollama's /api/chat accepts the same OpenAI-style function tool schema as the request payload -
+    # only its *response* shape (streaming format, tool-call framing) differs, which is what
+    # ollama_round below exists to parse. The request side needs no separate schema.
+    return openai_command_tool(primary_tool)
+
+
 def gemini_command_tool(primary_tool):
     return {
         "name": COMMAND_TOOL_NAME,
@@ -252,3 +261,107 @@ def gemini_command_tool(primary_tool):
             "required": ["argv", "reason"],
         },
     }
+
+
+# ---- Ollama transport ----
+#
+# This is a real parser, not a thin wrapper over the OpenAI-compatible round above: Ollama's native
+# /api/chat differs from the OpenAI dialect in every direction that matters - NDJSON lines instead of
+# SSE `data:` frames, `message.content` / `message.tool_calls` instead of `choices[0].delta`, and tool
+# call arguments arriving as a JSON *object* rather than a string fragment to reassemble. (Ollama's
+# OpenAI-compatible /v1/chat/completions endpoint was deliberately not used here - it silently drops
+# tool calls when streaming is enabled, which would break every agent's tool loop.)
+#
+# Kept here because it carries no knowledge of any particular agent - only the transport. Each agent's
+# own `_run_ollama` loop (system prompt, report tag, tool dispatch, nudges, final round) stays in its
+# own tool_clients.py, exactly like the OpenAI-compatible round does.
+OLLAMA_CONTEXT_LENGTH = 16384
+
+
+async def ollama_round(base_url, model_id, messages, tools, result, read_timeout=600.0):
+    """Streams one round against Ollama's /api/chat. Fills `result` with `text` (the round's
+    narration) and `tool_calls` (a list of {id, name, arguments}, `arguments` re-serialized as a JSON
+    string so the rest of an agent's loop can `json.loads` it exactly like the OpenAI-shaped agents
+    do), or sets `result["error"]` on failure.
+
+    There is no 429 concept for a model running on this machine, so unlike the cloud rounds this only
+    retries on genuine connection failures - a dropped connection or Ollama not yet finished loading
+    the model into memory."""
+    payload = {
+        "model": model_id,
+        "messages": messages,
+        "stream": True,
+        "keep_alive": "10m",
+        "options": {"num_ctx": OLLAMA_CONTEXT_LENGTH},
+    }
+    if tools:
+        payload["tools"] = tools
+
+    timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=5.0)
+
+    for attempt in range(MAX_TRANSIENT_RETRIES + 1):
+        buffered = ""
+        narrated = 0
+        tool_calls = []
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", f"{base_url}/api/chat", json=payload) as response:
+                    if response.status_code >= 400:
+                        body = (await response.aread()).decode(errors="replace")
+                        result["error"] = f"{response.status_code}: {body[:300]}"
+                        return
+
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                        try:
+                            chunk = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+
+                        if chunk.get("error"):
+                            result["error"] = chunk["error"]
+                            return
+
+                        message = chunk.get("message") or {}
+                        text = message.get("content")
+                        if text:
+                            buffered += text
+                            narration, narrated = narration_chunk(buffered, narrated)
+                            if narration:
+                                yield {"type": "thinking_delta", "text": narration}
+
+                        for call in message.get("tool_calls") or []:
+                            function = call.get("function") or {}
+                            args = function.get("arguments")
+                            args_str = args if isinstance(args, str) else json.dumps(args or {})
+                            tool_calls.append({
+                                "id": f"call_{len(tool_calls)}",
+                                "name": function.get("name", ""),
+                                "arguments": args_str,
+                            })
+
+                        if chunk.get("done"):
+                            break
+        except httpx.HTTPError as e:
+            # Retrying a round that already streamed narration or collected tool calls would replay
+            # them on the client, so only an untouched round can be replayed - same rule the
+            # OpenAI-compatible round follows.
+            if narrated or tool_calls or attempt >= MAX_TRANSIENT_RETRIES:
+                result["error"] = str(e)
+                return
+            delay = transient_delay(attempt)
+            yield {"type": "retrying", "retry_in": delay, "attempt": attempt + 1}
+            await wait_before_transient_retry(delay, attempt, str(e)[:120])
+            continue
+
+        narration, narrated = narration_chunk(buffered, narrated, complete=True)
+        if narration:
+            yield {"type": "thinking_delta", "text": narration}
+
+        result["text"] = buffered
+        result["tool_calls"] = tool_calls
+        return
+
+    result.setdefault("error", "ollama retries exhausted without a response")

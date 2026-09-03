@@ -79,7 +79,7 @@ dropdowns.forEach(dropdown => {
 
     // Set initial selected value
     if (dropdown.id === 'local-provider-dropdown') {
-        dropdown.dataset.selectedValue = "llama-cpp";
+        dropdown.dataset.selectedValue = "ollama";
     } else {
         dropdown.dataset.selectedValue = "";
     }
@@ -99,15 +99,7 @@ dropdowns.forEach(dropdown => {
             dropdown.dataset.selectedValue = value;
             dropdown.classList.remove('open');
 
-            if (dropdown.id === 'local-provider-dropdown') {
-                if (value === 'llama-cpp') {
-                    document.getElementById('models-list-llama-cpp').style.display = 'flex';
-                    document.getElementById('models-list-ollama').style.display = 'none';
-                } else if (value === 'ollama') {
-                    document.getElementById('models-list-llama-cpp').style.display = 'none';
-                    document.getElementById('models-list-ollama').style.display = 'flex';
-                }
-            } else if (dropdown.id === 'cloud-provider-dropdown') {
+            if (dropdown.id === 'cloud-provider-dropdown') {
                 const apiKeyContainer = document.getElementById('cloud-api-key-container');
                 const apiKeyLabel = document.getElementById('cloud-api-key-label');
                 apiKeyContainer.style.display = 'flex';
@@ -177,13 +169,15 @@ function formatGpuCard(gpu) {
         return;
     }
 
+    const vramSuffix = (gpu.vram_gb !== null && gpu.vram_gb !== undefined) ? ` · ${gpu.vram_gb} GB` : '';
+
     if (gpu.usage_percent !== null && gpu.usage_percent !== undefined) {
         valueEl.innerHTML = `${Math.round(gpu.usage_percent)}<span style="font-size: 0.9rem; color: var(--text-muted); margin-left: 2px;">%</span>`;
-        labelEl.innerText = gpu.model || 'GPU';
+        labelEl.innerText = (gpu.model || 'GPU') + vramSuffix;
     } else {
         valueEl.innerText = '—';
         cardEl.classList.add('hw-card-unavailable');
-        labelEl.innerText = gpu.model ? `${gpu.model} · utilization unavailable` : 'Utilization unavailable';
+        labelEl.innerText = gpu.model ? `${gpu.model} · utilization unavailable${vramSuffix}` : 'Utilization unavailable';
     }
 }
 
@@ -268,6 +262,143 @@ async function loadInsights() {
 
 loadHardwareProfile();
 loadInsights();
+
+// ---- Local models (Ollama): environment check, hardware-matched recommendations, download ----
+
+const FIT_LABELS = {
+    recommended: { label: 'Recommended', color: '#10b981' },
+    possible: { label: 'Possible', color: 'var(--text-muted)' },
+    too_large: { label: 'Too large', color: '#f59e0b' },
+    no_disk_space: { label: 'Not enough disk space', color: '#f59e0b' },
+    unknown: { label: 'Unknown fit', color: '#94a3b8' },
+};
+
+function formatSize(gb) {
+    return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(gb * 1024)} MB`;
+}
+
+function renderLocalModels(recommendations) {
+    const container = document.getElementById('local-models-list');
+
+    if (!recommendations.length) {
+        container.innerHTML = '<p style="font-family: \'Inter\', sans-serif; font-size: 0.85rem; color: var(--text-muted);">No models available.</p>';
+        return;
+    }
+
+    container.innerHTML = recommendations.map(model => {
+        const fit = FIT_LABELS[model.fit] || FIT_LABELS.unknown;
+        const disabled = model.installed || model.fit === 'too_large' || model.fit === 'no_disk_space' || model.fit === 'unknown';
+        const muted = model.fit === 'too_large' || model.fit === 'no_disk_space' || model.fit === 'unknown';
+        const buttonLabel = model.installed ? 'Installed' : 'Download';
+        const detail = `${model.params_b}B · ${model.quantization} · ${formatSize(model.size_gb)}`;
+
+        return `
+            <div class="model-item" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease; ${muted ? 'opacity: 0.55;' : ''}">
+                <div style="display: flex; flex-direction: column; gap: 0.15rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">${model.display_name}</span>
+                        <span style="font-family: 'Inter', sans-serif; font-size: 0.7rem; color: ${fit.color}; text-transform: uppercase; letter-spacing: 0.05em;">${fit.label}</span>
+                    </div>
+                    <span style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">${model.reason || detail}</span>
+                </div>
+                <button
+                    class="local-download-btn"
+                    data-model-key="${model.model_key}"
+                    data-display-name="${model.display_name}"
+                    ${disabled ? 'disabled' : ''}
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: ${disabled ? 'default' : 'pointer'}; color: var(--text-main); transition: background-color 0.2s ease; opacity: ${disabled ? '0.6' : '1'};"
+                    ${disabled ? '' : `onmouseover="this.style.backgroundColor='var(--bg-color)'" onmouseout="this.style.backgroundColor='transparent'"`}
+                >${buttonLabel}</button>
+            </div>
+        `;
+    }).join('');
+}
+
+function showEnvBanner(detail) {
+    const banner = document.getElementById('local-env-banner');
+    document.getElementById('local-env-detail').innerText = detail;
+    banner.style.display = 'flex';
+}
+
+function hideEnvBanner() {
+    document.getElementById('local-env-banner').style.display = 'none';
+}
+
+async function loadLocalModels() {
+    try {
+        const res = await fetch(`${BACKEND_URL}/linux/local-models/recommendations`);
+        if (!res.ok) throw new Error(`recommendations fetch failed: ${res.status}`);
+        const data = await res.json();
+
+        if (!data.environment.running) {
+            showEnvBanner(data.environment.detail);
+        } else {
+            hideEnvBanner();
+        }
+
+        renderLocalModels(data.recommendations);
+    } catch (e) {
+        console.error('Could not load local model recommendations:', e);
+        document.getElementById('local-models-list').innerHTML =
+            '<p style="font-family: \'Inter\', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Could not reach the backend to load local models.</p>';
+    }
+}
+
+document.getElementById('local-env-recheck-btn').addEventListener('click', loadLocalModels);
+
+document.getElementById('local-models-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.local-download-btn');
+    if (!btn || btn.disabled) return;
+
+    const modelKey = btn.dataset.modelKey;
+    const errorEl = document.getElementById('local-download-error');
+    errorEl.style.display = 'none';
+
+    btn.disabled = true;
+    btn.innerText = 'Starting…';
+
+    let res;
+    try {
+        res = await fetch(`${BACKEND_URL}/linux/local-models/download`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model_key: modelKey }),
+        });
+    } catch (err) {
+        errorEl.innerText = "Couldn't reach the backend to start the download.";
+        errorEl.style.display = 'block';
+        btn.disabled = false;
+        btn.innerText = 'Download';
+        return;
+    }
+
+    if (res.status === 202) {
+        window.location.href = `/download?key=${encodeURIComponent(modelKey)}`;
+        return;
+    }
+
+    let detail = 'Something went wrong starting the download.';
+    try {
+        const body = await res.json();
+        detail = body.detail || detail;
+    } catch (err) {
+        // Response body wasn't JSON - fall back to the generic message above.
+    }
+
+    if (res.status === 409) {
+        errorEl.innerHTML = `${detail} <a href="/download" style="color: var(--text-main); text-decoration: underline;">View progress</a>`;
+    } else if (res.status === 503) {
+        showEnvBanner(detail);
+        errorEl.innerText = detail;
+    } else {
+        errorEl.innerText = detail;
+    }
+    errorEl.style.display = 'block';
+    btn.disabled = false;
+    btn.innerText = 'Download';
+});
+
+loadLocalModels();
 
 // ---- Cloud provider API key: verify, store, then fade to home ----
 

@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 
 from core.db import get_connection
 from routers.byok.queries import has_any_key
+from routers.models.local.queries import has_ready_local_model
 from .queries import insert_user, user_table_has_rows
 from .schemas import OnboardingUserPayload
 
@@ -15,7 +16,10 @@ def verify_onboarding():
         has_rows = user_table_has_rows(conn)
         onboarding_required = not has_rows
 
-        setup_required = False if onboarding_required else not has_any_key(conn)
+        setup_required = (
+            False if onboarding_required
+            else not (has_any_key(conn) or has_ready_local_model(conn))
+        )
 
         return {
             "onboarding_required": onboarding_required,

@@ -9,7 +9,8 @@ from fastapi import HTTPException
 from core.crypto import decrypt
 from core.db import get_connection
 from routers.byok.queries import get_key
-from routers.byok.schemas import VALID_PROVIDERS
+from routers.models.local.runtime import LocalProviderUnavailable, resolve_endpoint
+from routers.models.providers import ALL_PROVIDERS, is_local
 from routers.sessions.queries import create_session, get_session, insert_chat, rename_session, touch_session
 
 from .agents.router import AGENT_WS_PATHS
@@ -87,13 +88,15 @@ async def _persist_final(session_id, final_event):
     await anyio.to_thread.run_sync(_touch_session_sync, session_id)
 
 
-async def _generate_title(provider, api_key, model_id, message):
+async def _generate_title(provider, api_key, model_id, message, base_url=None):
     """Best-effort short title for a new session, from the same provider/model the user picked.
     Any failure just leaves the session named "New chat" rather than blocking the turn on it - this
     runs alongside the main turn in the same task group, so a raised exception here must not be
     allowed to cancel that turn."""
     try:
-        raw = await call_provider(provider, api_key, model_id, SESSION_TITLE_SYSTEM_PROMPT, message)
+        raw = await call_provider(
+            provider, api_key, model_id, SESSION_TITLE_SYSTEM_PROMPT, message, base_url=base_url
+        )
     except Exception as e:
         logger.warning(f"session title generation failed: {e}")
         return None
@@ -103,7 +106,7 @@ async def _generate_title(provider, api_key, model_id, message):
     return title[:80] or None
 
 
-async def _relay_agent(mode, provider, api_key, model_id, message):
+async def _relay_agent(mode, provider, api_key, model_id, message, base_url=None):
     """Calls a specialist agent over its real WS route (loopback) rather than importing and calling
     it directly, relaying every event it streams back unchanged.
 
@@ -118,6 +121,7 @@ async def _relay_agent(mode, provider, api_key, model_id, message):
                 "api_key": api_key,
                 "model_id": model_id,
                 "message": message,
+                "base_url": base_url,
             }))
             async for raw in ws:
                 event = json.loads(raw)
@@ -155,21 +159,29 @@ async def run_orchestrator(request: OrchestratorRequest):
         yield {"type": "already_running", "session_id": running["session_id"], "session_name": running["session_name"]}
         return
 
-    if request.provider not in VALID_PROVIDERS:
+    if request.provider not in ALL_PROVIDERS:
         yield {"type": "error", "status": 400, "detail": f"Unknown provider: {request.provider}"}
         return
 
-    try:
-        key_row = await anyio.to_thread.run_sync(_get_key_sync, request.provider)
-    except HTTPException as e:
-        yield {"type": "error", "status": e.status_code, "detail": e.detail}
-        return
+    base_url = None
+    if is_local(request.provider):
+        try:
+            base_url, api_key = await resolve_endpoint(request.provider, request.model_id)
+        except LocalProviderUnavailable as e:
+            yield {"type": "error", "status": 503, "detail": str(e)}
+            return
+    else:
+        try:
+            key_row = await anyio.to_thread.run_sync(_get_key_sync, request.provider)
+        except HTTPException as e:
+            yield {"type": "error", "status": e.status_code, "detail": e.detail}
+            return
 
-    if key_row is None:
-        yield {"type": "error", "status": 404, "detail": f"No stored API key for provider: {request.provider}"}
-        return
+        if key_row is None:
+            yield {"type": "error", "status": 404, "detail": f"No stored API key for provider: {request.provider}"}
+            return
 
-    api_key = decrypt(key_row["api_key_encrypted"])
+        api_key = decrypt(key_row["api_key_encrypted"])
 
     is_new_session = request.session_id is None
     if is_new_session:
@@ -193,15 +205,25 @@ async def run_orchestrator(request: OrchestratorRequest):
             if is_new_session:
                 async def _title_worker():
                     title_holder["title"] = await _generate_title(
-                        request.provider, api_key, request.model_id, request.message
+                        request.provider, api_key, request.model_id, request.message, base_url=base_url
                     )
                 tg.start_soon(_title_worker)
 
             yield {"type": "started"}
 
+            if is_local(request.provider):
+                # A local model not already resident can take tens of seconds to load before the
+                # classifier's first token arrives - this keeps the UI honest about what's happening
+                # instead of leaving the user staring at a dead spinner. Purely additive: it only ever
+                # appears before "classified", and a client that ignores it sees the same sequence as
+                # any cloud turn.
+                yield {"type": "model_loading", "model_id": request.model_id}
+
             mode = None
             try:
-                mode = await classify_intent(request.provider, api_key, request.model_id, request.message)
+                mode = await classify_intent(
+                    request.provider, api_key, request.model_id, request.message, base_url=base_url
+                )
             except ProviderCallError as e:
                 logger.error(f"classification failed: {e}")
                 yield {
@@ -215,7 +237,7 @@ async def run_orchestrator(request: OrchestratorRequest):
 
                 if mode in AGENT_WS_PATHS:
                     async for event in _relay_agent(
-                        mode, request.provider, api_key, request.model_id, request.message
+                        mode, request.provider, api_key, request.model_id, request.message, base_url=base_url
                     ):
                         if event["type"] == "error":
                             event.setdefault("status", 502)
@@ -226,7 +248,8 @@ async def run_orchestrator(request: OrchestratorRequest):
                 else:
                     try:
                         raw_text = await call_provider(
-                            request.provider, api_key, request.model_id, BASE_SYSTEM_PROMPT, request.message
+                            request.provider, api_key, request.model_id, BASE_SYSTEM_PROMPT, request.message,
+                            base_url=base_url,
                         )
                     except ProviderCallError as e:
                         logger.error(f"{request.provider} call failed: {e}")

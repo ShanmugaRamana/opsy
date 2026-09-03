@@ -1,6 +1,8 @@
 import anthropic
 import httpx
 
+from routers.models.providers import is_local
+
 from .ratelimit import (
     MAX_RATE_LIMIT_RETRIES,
     is_rate_limited,
@@ -10,6 +12,14 @@ from .ratelimit import (
 )
 
 TIMEOUT = 60.0
+
+# A local model generating on CPU can take much longer than a hosted provider ever would, so the read
+# timeout is generous - but the connect timeout stays short, so an unreachable Ollama still fails fast
+# instead of hanging for ten minutes before reporting the real problem.
+LOCAL_TIMEOUT = httpx.Timeout(connect=5.0, read=600.0, write=30.0, pool=5.0)
+# Set explicitly, generously, rather than left at Ollama's small default - the standing rule is a
+# bigger context window, never a smaller tool schema.
+LOCAL_CONTEXT_LENGTH = 16384
 
 
 class ProviderCallError(Exception):
@@ -119,6 +129,31 @@ async def _call_gemini(api_key, model_id, system_prompt, message):
             raise ProviderCallError(str(e)) from e
 
 
+async def _call_ollama(base_url, model_id, system_prompt, message):
+    """Ollama's native /api/chat, not its OpenAI-compatible /v1/chat/completions - that compat layer
+    silently drops tool calls when streaming, so the agents rely on this same native endpoint for
+    their tool loops (see agents/shared.py:ollama_round). This non-streaming call is only for
+    classification, session-title generation, and the plain general-chat path, none of which use
+    tools, but it stays on the same endpoint as a matter of consistency."""
+    payload = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message},
+        ],
+        "stream": False,
+        "keep_alive": "10m",
+        "options": {"num_ctx": LOCAL_CONTEXT_LENGTH},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=LOCAL_TIMEOUT) as client:
+            response = await client.post(f"{base_url}/api/chat", json=payload)
+        response.raise_for_status()
+        return response.json()["message"]["content"]
+    except (httpx.HTTPError, KeyError) as e:
+        raise ProviderCallError(str(e)) from e
+
+
 _CLIENTS = {
     "anthropic": _call_anthropic,
     "openai": _call_openai,
@@ -127,7 +162,14 @@ _CLIENTS = {
 }
 
 
-async def call_provider(provider, api_key, model_id, system_prompt, message):
+async def call_provider(provider, api_key, model_id, system_prompt, message, base_url=None):
+    # Local providers have no quota to respect and no key to send - they skip the cloud dispatch table
+    # entirely rather than being shoehorned into the (api_key, model_id, ...) signature it expects.
+    if is_local(provider):
+        if provider == "ollama":
+            return await _call_ollama(base_url, model_id, system_prompt, message)
+        raise ProviderCallError(f"unknown local provider: {provider}")
+
     client = _CLIENTS.get(provider)
     if client is None:
         raise ProviderCallError(f"unknown provider: {provider}")

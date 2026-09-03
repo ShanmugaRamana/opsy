@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, ValidationError
@@ -20,9 +21,12 @@ AGENT_INFO = {
 
 class DiskAgentRequest(BaseModel):
     provider: str
-    api_key: str = Field(min_length=1)
+    # None for local providers (e.g. Ollama), which need no key - base_url carries where to reach
+    # them instead.
+    api_key: Optional[str] = None
     model_id: str
     message: str = Field(min_length=1)
+    base_url: Optional[str] = None
 
 
 @router.get("/")
@@ -46,7 +50,9 @@ async def disk_agent_ws(websocket: WebSocket):
             await websocket.send_json({"type": "error", "detail": str(e)})
             return
 
-        async for event in run_disk_agent(request.provider, request.api_key, request.model_id, request.message):
+        async for event in run_disk_agent(
+            request.provider, request.api_key, request.model_id, request.message, base_url=request.base_url
+        ):
             await websocket.send_json(event)
     except WebSocketDisconnect:
         logger.info("disk agent ws client disconnected")

@@ -1,5 +1,7 @@
 import psycopg2.extras
 
+from routers.models.providers import LOCAL_PROVIDERS
+
 from .catalog import PROVIDER_CATALOG, PROVIDER_DISPLAY_NAMES
 
 CREATE_MODELS_TABLE_SQL = """
@@ -16,7 +18,19 @@ CREATE TABLE IF NOT EXISTS models (
 
 def sync_provider_catalog(conn, provider):
     """Replaces this provider's rows with its curated catalog. No-op if the provider
-    isn't in our catalog (e.g. an unsupported/removed provider)."""
+    isn't in our catalog (e.g. an unsupported/removed provider).
+
+    Refuses local providers outright rather than silently no-op'ing: this does a blanket
+    `DELETE FROM models WHERE provider = %s`, and a local provider's rows are only ever meant to be
+    added one at a time, by `local/queries.py:mark_ready()`, as each download finishes. Running this
+    against 'ollama' would wipe every model a user has downloaded.
+    """
+    if provider in LOCAL_PROVIDERS:
+        raise ValueError(
+            f"sync_provider_catalog() must not be called for local provider {provider!r} - "
+            "local models table rows are managed by local/queries.py:mark_ready()"
+        )
+
     catalog_entries = PROVIDER_CATALOG.get(provider, [])
 
     with conn.cursor() as cur:

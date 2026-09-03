@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-VALID_PROVIDERS = ("anthropic", "openai", "gemini", "groq")
+from routers.models.providers import CLOUD_PROVIDERS as VALID_PROVIDERS
 
 
 class ApiKeyPayload(BaseModel):

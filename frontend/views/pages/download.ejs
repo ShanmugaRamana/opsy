@@ -1,0 +1,67 @@
+<style>
+    .dl-progress-track {
+        width: 100%;
+        height: 10px;
+        border-radius: 9999px;
+        background-color: var(--card-bg);
+        border: 1px solid var(--border);
+        overflow: hidden;
+    }
+    .dl-progress-fill {
+        height: 100%;
+        width: 0%;
+        background-color: #000000;
+        border-radius: 9999px;
+        transition: width 0.25s ease;
+    }
+    .dl-stat {
+        font-family: 'Inter', sans-serif;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+    .dl-cancel-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        padding: 0.6rem 1.2rem;
+        border-radius: 9999px;
+        font-family: 'Clash Display', sans-serif;
+        font-size: 0.9rem;
+        cursor: pointer;
+        color: var(--text-main);
+        transition: background-color 0.2s ease;
+    }
+    .dl-cancel-btn:hover { background-color: var(--bg-color); }
+</style>
+
+<div class="onboarding-container">
+    <div style="width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; text-align: center;">
+        <h2 class="onboarding-heading" style="margin-bottom: 0.5rem;">Downloading model</h2>
+        <p id="dl-model-name" style="font-family: 'Clash Display', sans-serif; font-size: 1.1rem; color: var(--text-muted); margin: 0 0 clamp(2rem, 5vh, 3rem) 0;">—</p>
+
+        <div style="width: 100%; display: flex; flex-direction: column; gap: 0.75rem;">
+            <div class="dl-progress-track">
+                <div class="dl-progress-fill" id="dl-progress-fill"></div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; width: 100%;">
+                <span class="dl-stat" id="dl-percent">0%</span>
+                <span class="dl-stat" id="dl-phase">Starting…</span>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; width: 100%;">
+                <span class="dl-stat" id="dl-bytes"></span>
+                <span class="dl-stat" id="dl-speed-eta"></span>
+            </div>
+        </div>
+
+        <p id="dl-error" style="display:none; color:#dc2626; margin-top: 1.5rem; font-size: 0.9rem;"></p>
+
+        <div id="dl-ready-message" style="display:none; margin-top: 1.5rem; padding: 0.75rem 1rem; border-radius: 8px; background-color: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #10b981; font-family: 'Clash Display', sans-serif; font-size: 0.9rem;">Ready — taking you home…</div>
+
+        <div id="dl-actions" style="margin-top: clamp(2rem, 5vh, 3rem); display: flex; gap: 0.75rem;">
+            <button class="dl-cancel-btn" id="dl-cancel-btn">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script src="/js/download.js"></script>

@@ -18,6 +18,7 @@ class GPUInfo(BaseModel):
     model: Optional[str] = None
     dedicated: Optional[bool] = None
     usage_percent: Optional[float] = None
+    vram_gb: Optional[float] = None
 
 
 class StorageInfo(BaseModel):

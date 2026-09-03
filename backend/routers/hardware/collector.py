@@ -123,18 +123,46 @@ def _get_amd_usage_percent():
         return None
 
 
+def _get_nvidia_vram_gb():
+    if not shutil.which("nvidia-smi"):
+        return None
+    try:
+        output = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=5, check=True,
+        ).stdout.strip()
+        mib = float(output.splitlines()[0])
+        return round(mib / 1024, 1)
+    except Exception as e:
+        logger.warning(f"GPU VRAM unavailable: nvidia-smi failed: {e}")
+        return None
+
+
+def _get_amd_vram_gb():
+    try:
+        with open("/sys/class/drm/card0/device/mem_info_vram_total") as f:
+            return round(float(f.read().strip()) / (1024 ** 3), 1)
+    except Exception as e:
+        logger.warning(f"GPU VRAM unavailable: {e}")
+        return None
+
+
 def get_gpu():
     model, dedicated = _get_gpu_model_and_vendor()
     if model is None:
         return None
 
     usage_percent = None
+    vram_gb = None
     model_lower = model.lower()
     if "nvidia" in model_lower:
         usage_percent = _get_nvidia_usage_percent()
+        vram_gb = _get_nvidia_vram_gb()
     elif re.search(r"\b(amd|ati|radeon)\b", model_lower):
         usage_percent = _get_amd_usage_percent()
+        vram_gb = _get_amd_vram_gb()
     else:
         logger.warning("GPU utilization unavailable: no counter for this vendor")
+        logger.warning("GPU VRAM unavailable: no counter for this vendor")
 
-    return {"model": model, "dedicated": dedicated, "usage_percent": usage_percent}
+    return {"model": model, "dedicated": dedicated, "usage_percent": usage_percent, "vram_gb": vram_gb}

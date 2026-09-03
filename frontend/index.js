@@ -40,6 +40,11 @@ app.get('/setup', (req, res) => {
   res.render('index', { title: 'Setup - Opsy', page: 'pages/setup' });
 });
 
+// Local-model download progress route
+app.get('/download', (req, res) => {
+  res.render('index', { title: 'Downloading - Opsy', page: 'pages/download' });
+});
+
 // Shutdown route for PC app to close the server
 app.post('/shutdown', (req, res) => {
   console.log('Received shutdown request, terminating server...');

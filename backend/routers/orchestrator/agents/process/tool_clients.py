@@ -263,7 +263,7 @@ async def _anthropic_round(client, model_id, messages, tools, result):
     result.setdefault("error", "provider retries exhausted without a response")
 
 
-async def _run_anthropic(api_key, model_id, message):
+async def _run_anthropic(api_key, model_id, message, base_url=None):
     client = anthropic.AsyncAnthropic(api_key=api_key)
     tools = _anthropic_tool_schema()
     messages = [{"role": "user", "content": message}]
@@ -555,14 +555,14 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
     yield _final_event(parse_process_report(final_text), narration, commands_run)
 
 
-async def _run_openai(api_key, model_id, message):
+async def _run_openai(api_key, model_id, message, base_url=None):
     async for event in _run_openai_compatible(
         "https://api.openai.com/v1/chat/completions", api_key, model_id, message
     ):
         yield event
 
 
-async def _run_groq(api_key, model_id, message):
+async def _run_groq(api_key, model_id, message, base_url=None):
     async for event in _run_openai_compatible(
         "https://api.groq.com/openai/v1/chat/completions", api_key, model_id, message
     ):
@@ -687,7 +687,7 @@ async def _gemini_round(url, api_key, contents, tools, result):
     result.setdefault("error", "provider retries exhausted without a response")
 
 
-async def _run_gemini(api_key, model_id, message):
+async def _run_gemini(api_key, model_id, message, base_url=None):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:streamGenerateContent"
     tools = _gemini_tool_schema()
     contents = [{"role": "user", "parts": [{"text": message}]}]
@@ -765,15 +765,132 @@ async def _run_gemini(api_key, model_id, message):
     yield _final_event(parse_process_report(final_text), narration, commands_run)
 
 
+# ---- Ollama ----
+#
+# The full tool schema and the full four-round loop, same as every cloud provider - the standing rule
+# is that a local provider drives the identical tool-calling flow, never a trimmed one. Only the wire
+# format differs, and that difference lives in shared.ollama_round; this loop's shape mirrors
+# _run_openai_compatible almost exactly.
+
+def _ollama_tool_schema():
+    # Same JSON shape the OpenAI-compatible schema uses - Ollama's /api/chat accepts the same
+    # function-tool request format. Only response parsing differs (see shared.ollama_round).
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": TOOL_NAME,
+                "description": TOOL_DESCRIPTION,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "enum": list(PROCESS_COMMANDS.keys()),
+                            "description": _command_enum_description(),
+                        },
+                        "arg": {"type": "string", "description": ARG_DESCRIPTION},
+                    },
+                    "required": ["command"],
+                },
+            },
+        },
+        shared.ollama_command_tool(TOOL_NAME),
+    ]
+
+
+async def _run_ollama(api_key, model_id, message, base_url=None):
+    tools = _ollama_tool_schema()
+    messages = [
+        {"role": "system", "content": PROCESS_AGENT_SYSTEM_PROMPT},
+        {"role": "user", "content": message},
+    ]
+    commands_run = []
+    narration = ""
+    final_text = ""
+    nudges = 0
+    round_index = 0
+
+    while round_index <= MAX_TOOL_ROUNDS:
+        # The extra final round runs without tools and says so in the conversation, so the model
+        # knows its budget is gone rather than silently losing the ability to act.
+        final_round = round_index == MAX_TOOL_ROUNDS
+        round_tools = None if final_round else tools
+        if final_round:
+            messages.append({"role": "user", "content": FINAL_ROUND_MESSAGE})
+
+        result = {}
+        async for event in shared.ollama_round(base_url, model_id, messages, round_tools, result):
+            if event["type"] == "thinking_delta":
+                narration += event["text"]
+            yield event
+
+        if "error" in result:
+            yield {"type": "error", "detail": result["error"], "status": 502}
+            return
+
+        if (result.get("text") or "").strip():
+            final_text = result["text"]
+
+        calls = result.get("tool_calls") or []
+        if not calls:
+            if _has_report(result.get("text")) or final_round:
+                final_text = result.get("text", "") or final_text
+                break
+            if nudges >= MAX_NUDGES:
+                # Out of nudges: go straight to the forced-answer round rather than giving up, so a
+                # stalling model is still asked outright for the report.
+                round_index = MAX_TOOL_ROUNDS
+                continue
+            # Narrated but never called the tool or gave a report - nudge without spending a tool
+            # round, so a model that stalls early keeps its full investigation budget.
+            nudges += 1
+            if (result.get("text") or "").strip():
+                messages.append({"role": "assistant", "content": result["text"]})
+            messages.append({"role": "user", "content": NUDGE_MESSAGE})
+            continue
+
+        # Ollama's tool_calls carry arguments as a JSON object, not a string fragment, and pairs a
+        # tool result to its call by name rather than by an id (it doesn't emit one) - both are real
+        # differences from the OpenAI dialect, not just cosmetic ones.
+        messages.append({
+            "role": "assistant",
+            "content": result.get("text") or "",
+            "tool_calls": [
+                {"function": {"name": call["name"], "arguments": json.loads(call["arguments"] or "{}")}}
+                for call in calls
+            ],
+        })
+
+        for call in calls:
+            try:
+                args = json.loads(call["arguments"] or "{}")
+            except json.JSONDecodeError:
+                args = {}
+
+            output = None
+            async for event in _dispatch_tool(call["name"], args):
+                if event["type"] == "tool_result":
+                    output = event["output"]
+                yield event
+            _record_command(commands_run, call["name"], args, output)
+            messages.append({"role": "tool", "content": output, "name": call["name"]})
+
+        round_index += 1
+
+    yield _final_event(parse_process_report(final_text), narration, commands_run)
+
+
 _AGENTS = {
     "anthropic": _run_anthropic,
     "openai": _run_openai,
     "gemini": _run_gemini,
     "groq": _run_groq,
+    "ollama": _run_ollama,
 }
 
 
-async def run_process_agent(provider, api_key, model_id, message):
+async def run_process_agent(provider, api_key, model_id, message, base_url=None):
     """Streams the agent's events, guaranteeing the stream ends with exactly one terminal event.
 
     The client collapses its trace panel when the turn ends, so a run that stops without a "final"
@@ -786,7 +903,7 @@ async def run_process_agent(provider, api_key, model_id, message):
 
     saw_terminal = False
     try:
-        async for event in agent(api_key, model_id, message):
+        async for event in agent(api_key, model_id, message, base_url=base_url):
             if event["type"] in ("final", "error"):
                 saw_terminal = True
             yield event

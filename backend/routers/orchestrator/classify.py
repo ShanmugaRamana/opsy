@@ -33,8 +33,8 @@ def _match(text):
     return GENERAL
 
 
-async def classify_intent(provider, api_key, model_id, message) -> str:
-    raw = await call_provider(provider, api_key, model_id, CLASSIFY_SYSTEM_PROMPT, message)
+async def classify_intent(provider, api_key, model_id, message, base_url=None) -> str:
+    raw = await call_provider(provider, api_key, model_id, CLASSIFY_SYSTEM_PROMPT, message, base_url=base_url)
     mode = _match(raw or "")
     if mode == GENERAL and (raw or "").strip().lower() not in ("general", ""):
         # Worth seeing in the log: a reply that matched nothing means the classifier prompt and the
