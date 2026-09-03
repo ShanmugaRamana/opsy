@@ -74,7 +74,11 @@ async def run_orchestrator(request: OrchestratorRequest):
         mode = await classify_intent(request.provider, api_key, request.model_id, request.message)
     except ProviderCallError as e:
         logger.error(f"classification failed: {e}")
-        yield {"type": "error", "status": 502, "detail": f"classification failed: {e}"}
+        yield {
+            "type": "error",
+            "status": 429 if getattr(e, "rate_limited", False) else 502,
+            "detail": f"classification failed: {e}",
+        }
         return
 
     yield {"type": "classified", "mode": mode}
@@ -92,7 +96,11 @@ async def run_orchestrator(request: OrchestratorRequest):
         )
     except ProviderCallError as e:
         logger.error(f"{request.provider} call failed: {e}")
-        yield {"type": "error", "status": 502, "detail": f"{request.provider} call failed: {e}"}
+        yield {
+            "type": "error",
+            "status": 429 if getattr(e, "rate_limited", False) else 502,
+            "detail": f"{request.provider} call failed: {e}",
+        }
         return
 
     thinking, content = parse_response(raw_text)

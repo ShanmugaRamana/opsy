@@ -1,50 +1,82 @@
 import anthropic
 import httpx
 
+from .ratelimit import (
+    MAX_RATE_LIMIT_RETRIES,
+    is_rate_limited,
+    retry_delay,
+    space_calls,
+    wait_before_retry,
+)
+
 TIMEOUT = 60.0
 
 
 class ProviderCallError(Exception):
     """Raised when a provider's completion call fails (auth, network, or unexpected shape)."""
 
+    def __init__(self, message, rate_limited=False):
+        super().__init__(message)
+        self.rate_limited = rate_limited
+
 
 async def _call_anthropic(api_key, model_id, system_prompt, message):
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    try:
-        response = await client.messages.create(
-            model=model_id,
-            max_tokens=16000,
-            system=system_prompt,
-            messages=[{"role": "user", "content": message}],
-        )
-    except anthropic.APIError as e:
-        raise ProviderCallError(str(e)) from e
 
-    for block in response.content:
-        if block.type == "text":
-            return block.text
-    raise ProviderCallError("anthropic response had no text block")
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        await space_calls()
+        try:
+            response = await client.messages.create(
+                model=model_id,
+                max_tokens=16000,
+                system=system_prompt,
+                messages=[{"role": "user", "content": message}],
+            )
+        except anthropic.RateLimitError as e:
+            if attempt >= MAX_RATE_LIMIT_RETRIES:
+                raise ProviderCallError(str(e), rate_limited=True) from e
+            headers = getattr(getattr(e, "response", None), "headers", None)
+            await wait_before_retry(retry_delay(headers, str(e), attempt), attempt)
+            continue
+        except anthropic.APIError as e:
+            raise ProviderCallError(str(e)) from e
+
+        for block in response.content:
+            if block.type == "text":
+                return block.text
+        raise ProviderCallError("anthropic response had no text block")
 
 
 async def _call_openai_compatible(base_url, api_key, model_id, system_prompt, message):
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            response = await client.post(
-                base_url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": model_id,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": message},
-                    ],
-                },
-            )
-        response.raise_for_status()
-        data = response.json()
-        return data["choices"][0]["message"]["content"]
-    except (httpx.HTTPError, KeyError, IndexError) as e:
-        raise ProviderCallError(str(e)) from e
+    payload = {
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": message},
+        ],
+    }
+
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        await space_calls()
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                response = await client.post(
+                    base_url, headers={"Authorization": f"Bearer {api_key}"}, json=payload
+                )
+
+            if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+                await wait_before_retry(
+                    retry_delay(response.headers, response.text, attempt), attempt
+                )
+                continue
+
+            if is_rate_limited(response.status_code):
+                raise ProviderCallError(f"429: {response.text[:300]}", rate_limited=True)
+
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+        except (httpx.HTTPError, KeyError, IndexError) as e:
+            raise ProviderCallError(str(e)) from e
 
 
 async def _call_openai(api_key, model_id, system_prompt, message):
@@ -60,21 +92,31 @@ async def _call_groq(api_key, model_id, system_prompt, message):
 
 
 async def _call_gemini(api_key, model_id, system_prompt, message):
-    try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            response = await client.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent",
-                params={"key": api_key},
-                json={
-                    "system_instruction": {"parts": [{"text": system_prompt}]},
-                    "contents": [{"role": "user", "parts": [{"text": message}]}],
-                },
-            )
-        response.raise_for_status()
-        data = response.json()
-        return data["candidates"][0]["content"]["parts"][0]["text"]
-    except (httpx.HTTPError, KeyError, IndexError) as e:
-        raise ProviderCallError(str(e)) from e
+    payload = {
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "contents": [{"role": "user", "parts": [{"text": message}]}],
+    }
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
+
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        await space_calls()
+        try:
+            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+                response = await client.post(url, params={"key": api_key}, json=payload)
+
+            if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+                await wait_before_retry(
+                    retry_delay(response.headers, response.text, attempt), attempt
+                )
+                continue
+
+            if is_rate_limited(response.status_code):
+                raise ProviderCallError(f"429: {response.text[:300]}", rate_limited=True)
+
+            response.raise_for_status()
+            return response.json()["candidates"][0]["content"]["parts"][0]["text"]
+        except (httpx.HTTPError, KeyError, IndexError) as e:
+            raise ProviderCallError(str(e)) from e
 
 
 _CLIENTS = {

@@ -333,6 +333,44 @@ function closeTrace() {
     trace = null;
 }
 
+// Provider errors arrive as raw upstream JSON. Pull out something a person can act on.
+function friendlyError(detail) {
+    const text = String(detail || 'Something went wrong.');
+
+    if (/rate.?limit|\b429\b|too many requests/i.test(text)) {
+        const wait = text.match(/try again in ([0-9.]+)\s*s/i);
+        const model = text.match(/model `([^`]+)`/);
+        const forModel = model ? ` for ${model[1]}` : '';
+        return wait
+            ? `Rate limit reached${forModel}. It should clear in about ${Math.ceil(parseFloat(wait[1]))} seconds — try again then, or pick a different model.`
+            : `Rate limit reached${forModel}. Wait a moment and try again, or pick a different model.`;
+    }
+
+    if (/\b401\b|invalid.*api.?key|authentication/i.test(text)) {
+        return 'That provider rejected the API key. Check the key in setup.';
+    }
+
+    const message = text.match(/"message"\s*:\s*"([^"]+)"/);
+    if (message) return message[1];
+
+    return text.length > 300 ? `${text.slice(0, 300)}...` : text;
+}
+
+function countdownRetry(row, seconds) {
+    let remaining = Math.ceil(seconds);
+    const tick = () => {
+        if (remaining <= 0) {
+            row.innerText = 'Retrying now';
+            return;
+        }
+        row.innerText = `Rate limited by the provider, retrying in ${remaining}s`;
+        setTraceHeader(`Rate limited, retrying in ${remaining}s`);
+        remaining -= 1;
+        setTimeout(tick, 1000);
+    };
+    tick();
+}
+
 function appendBlock(text, styles) {
     chatLog.style.display = 'flex';
     const block = document.createElement('div');
@@ -416,6 +454,15 @@ function handleOrchestratorEvent(rawEvent) {
         case 'thinking_delta':
             appendThinkingDelta(data.text);
             break;
+        case 'rate_limited': {
+            const active = ensureTrace();
+            active.details.open = true;
+            const row = document.createElement('div');
+            row.style.cssText = 'padding: 0.15rem 0; color: #e67e22;';
+            active.commands.appendChild(row);
+            countdownRetry(row, data.retry_in);
+            break;
+        }
         case 'tool_call':
             startTraceRow(data);
             break;
@@ -436,7 +483,7 @@ function handleOrchestratorEvent(rawEvent) {
             break;
         case 'error':
             closeTrace();
-            appendMessage('error', `Error: ${data.detail}`);
+            appendMessage('error', friendlyError(data.detail));
             break;
     }
 }

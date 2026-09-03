@@ -5,6 +5,13 @@ import os
 import anthropic
 import httpx
 
+from routers.orchestrator.ratelimit import (
+    MAX_RATE_LIMIT_RETRIES,
+    is_rate_limited,
+    retry_delay,
+    space_calls,
+    wait_before_retry,
+)
 from routers.orchestrator.schemas import CommandRun
 from routers.tools.disk.tool import DISK_COMMANDS, command_label, tool_schema_properties
 
@@ -30,7 +37,13 @@ INTERNAL_API_BASE = os.getenv("INTERNAL_API_BASE", "http://127.0.0.1:8000")
 
 
 def _command_enum_description():
-    return "; ".join(f"{cid}: {desc}" for cid, desc in tool_schema_properties().items())
+    """Only the first sentence of each command's description. The full text is useful reading in the
+    source, but this string ships on every round of every request, so the extra detail is a real
+    token cost against a provider's per-minute budget."""
+    parts = []
+    for cid, description in tool_schema_properties().items():
+        parts.append(f"{cid}: {description.split('. ')[0].rstrip('.')}")
+    return "; ".join(parts)
 
 
 async def _call_disk_tool(command_id, path=None):
@@ -100,7 +113,6 @@ def _anthropic_tool_schema():
 
 
 async def _anthropic_round(client, model_id, messages, tools, result):
-    buffered = ""
     kwargs = {
         "model": model_id,
         "max_tokens": MAX_TOKENS,
@@ -110,16 +122,30 @@ async def _anthropic_round(client, model_id, messages, tools, result):
     if tools:
         kwargs["tools"] = tools
 
-    try:
-        async with client.messages.stream(**kwargs) as stream:
-            async for event in stream:
-                if event.type == "content_block_delta" and getattr(event.delta, "type", "") == "text_delta":
-                    buffered += event.delta.text
-                    if not _is_xml(buffered):
-                        yield {"type": "thinking_delta", "text": event.delta.text}
-            result["message"] = await stream.get_final_message()
-    except anthropic.APIError as e:
-        result["error"] = str(e)
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        await space_calls()
+        buffered = ""
+        try:
+            async with client.messages.stream(**kwargs) as stream:
+                async for event in stream:
+                    if event.type == "content_block_delta" and getattr(event.delta, "type", "") == "text_delta":
+                        buffered += event.delta.text
+                        if not _is_xml(buffered):
+                            yield {"type": "thinking_delta", "text": event.delta.text}
+                result["message"] = await stream.get_final_message()
+            return
+        except anthropic.RateLimitError as e:
+            if attempt >= MAX_RATE_LIMIT_RETRIES:
+                result["error"] = str(e)
+                result["rate_limited"] = True
+                return
+            headers = getattr(getattr(e, "response", None), "headers", None)
+            delay = retry_delay(headers, str(e), attempt)
+            yield {"type": "rate_limited", "retry_in": delay, "attempt": attempt + 1}
+            await wait_before_retry(delay, attempt)
+        except anthropic.APIError as e:
+            result["error"] = str(e)
+            return
 
 
 async def _run_anthropic(api_key, model_id, message):
@@ -136,11 +162,16 @@ async def _run_anthropic(api_key, model_id, message):
 
         result = {}
         async for event in _anthropic_round(client, model_id, messages, round_tools, result):
-            narration += event["text"]
+            if event["type"] == "thinking_delta":
+                narration += event["text"]
             yield event
 
         if "error" in result:
-            yield {"type": "error", "detail": result["error"]}
+            yield {
+                "type": "error",
+                "detail": result["error"],
+                "status": 429 if result.get("rate_limited") else 502,
+            }
             return
 
         response = result["message"]
@@ -201,61 +232,75 @@ async def _openai_round(base_url, api_key, model_id, messages, tools, result):
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
 
-    buffered = ""
-    tool_calls = {}
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        await space_calls()
+        retry_after = None
+        buffered = ""
+        tool_calls = {}
 
-    try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            async with client.stream(
-                "POST", base_url, headers={"Authorization": f"Bearer {api_key}"}, json=payload
-            ) as response:
-                if response.status_code >= 400:
-                    body = await response.aread()
-                    result["error"] = f"{response.status_code}: {body.decode(errors='replace')[:300]}"
-                    return
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                async with client.stream(
+                    "POST", base_url, headers={"Authorization": f"Bearer {api_key}"}, json=payload
+                ) as response:
+                    if response.status_code >= 400:
+                        body = (await response.aread()).decode(errors="replace")
+                        if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+                            retry_after = retry_delay(response.headers, body, attempt)
+                        else:
+                            result["error"] = f"{response.status_code}: {body[:300]}"
+                            result["rate_limited"] = is_rate_limited(response.status_code)
+                            return
+                    else:
+                        async for line in response.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            data = line[len("data:"):].strip()
+                            if not data or data == "[DONE]":
+                                continue
 
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if not data or data == "[DONE]":
-                        continue
+                            try:
+                                chunk = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
 
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
+                            choices = chunk.get("choices") or []
+                            if not choices:
+                                continue
+                            delta = choices[0].get("delta") or {}
 
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
+                            text = delta.get("content")
+                            if text:
+                                buffered += text
+                                if not _is_xml(buffered):
+                                    yield {"type": "thinking_delta", "text": text}
 
-                    text = delta.get("content")
-                    if text:
-                        buffered += text
-                        if not _is_xml(buffered):
-                            yield {"type": "thinking_delta", "text": text}
+                            # Streamed tool calls arrive as fragments: the id and name land early,
+                            # while `arguments` builds up across chunks and is only parseable once
+                            # the round ends.
+                            for fragment in delta.get("tool_calls") or []:
+                                slot = tool_calls.setdefault(
+                                    fragment.get("index", 0), {"id": "", "name": "", "arguments": ""}
+                                )
+                                if fragment.get("id"):
+                                    slot["id"] = fragment["id"]
+                                function = fragment.get("function") or {}
+                                if function.get("name"):
+                                    slot["name"] = function["name"]
+                                if function.get("arguments"):
+                                    slot["arguments"] += function["arguments"]
+        except httpx.HTTPError as e:
+            result["error"] = str(e)
+            return
 
-                    # Streamed tool calls arrive as fragments: the id and name land early, while
-                    # `arguments` builds up across chunks and is only parseable once the round ends.
-                    for fragment in delta.get("tool_calls") or []:
-                        slot = tool_calls.setdefault(
-                            fragment.get("index", 0), {"id": "", "name": "", "arguments": ""}
-                        )
-                        if fragment.get("id"):
-                            slot["id"] = fragment["id"]
-                        function = fragment.get("function") or {}
-                        if function.get("name"):
-                            slot["name"] = function["name"]
-                        if function.get("arguments"):
-                            slot["arguments"] += function["arguments"]
-    except httpx.HTTPError as e:
-        result["error"] = str(e)
+        if retry_after is not None:
+            yield {"type": "rate_limited", "retry_in": retry_after, "attempt": attempt + 1}
+            await wait_before_retry(retry_after, attempt)
+            continue
+
+        result["text"] = buffered
+        result["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
         return
-
-    result["text"] = buffered
-    result["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
 
 
 async def _run_openai_compatible(base_url, api_key, model_id, message):
@@ -273,11 +318,16 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
 
         result = {}
         async for event in _openai_round(base_url, api_key, model_id, messages, round_tools, result):
-            narration += event["text"]
+            if event["type"] == "thinking_delta":
+                narration += event["text"]
             yield event
 
         if "error" in result:
-            yield {"type": "error", "detail": result["error"]}
+            yield {
+                "type": "error",
+                "detail": result["error"],
+                "status": 429 if result.get("rate_limited") else 502,
+            }
             return
 
         calls = result.get("tool_calls") or []
@@ -364,48 +414,61 @@ async def _gemini_round(url, api_key, contents, tools, result):
     if tools:
         payload["tools"] = tools
 
-    buffered = ""
-    parts = []
+    for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        await space_calls()
+        retry_after = None
+        buffered = ""
+        parts = []
 
-    try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            async with client.stream(
-                "POST", url, params={"key": api_key, "alt": "sse"}, json=payload
-            ) as response:
-                if response.status_code >= 400:
-                    body = await response.aread()
-                    result["error"] = f"{response.status_code}: {body.decode(errors='replace')[:300]}"
-                    return
+        try:
+            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+                async with client.stream(
+                    "POST", url, params={"key": api_key, "alt": "sse"}, json=payload
+                ) as response:
+                    if response.status_code >= 400:
+                        body = (await response.aread()).decode(errors="replace")
+                        if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+                            retry_after = retry_delay(response.headers, body, attempt)
+                        else:
+                            result["error"] = f"{response.status_code}: {body[:300]}"
+                            result["rate_limited"] = is_rate_limited(response.status_code)
+                            return
+                    else:
+                        async for line in response.aiter_lines():
+                            if not line.startswith("data:"):
+                                continue
+                            data = line[len("data:"):].strip()
+                            if not data:
+                                continue
 
-                async for line in response.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if not data:
-                        continue
+                            try:
+                                chunk = json.loads(data)
+                            except json.JSONDecodeError:
+                                continue
 
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
+                            candidates = chunk.get("candidates") or []
+                            if not candidates:
+                                continue
 
-                    candidates = chunk.get("candidates") or []
-                    if not candidates:
-                        continue
+                            for part in candidates[0].get("content", {}).get("parts", []) or []:
+                                parts.append(part)
+                                text = part.get("text")
+                                if text:
+                                    buffered += text
+                                    if not _is_xml(buffered):
+                                        yield {"type": "thinking_delta", "text": text}
+        except httpx.HTTPError as e:
+            result["error"] = str(e)
+            return
 
-                    for part in candidates[0].get("content", {}).get("parts", []) or []:
-                        parts.append(part)
-                        text = part.get("text")
-                        if text:
-                            buffered += text
-                            if not _is_xml(buffered):
-                                yield {"type": "thinking_delta", "text": text}
-    except httpx.HTTPError as e:
-        result["error"] = str(e)
+        if retry_after is not None:
+            yield {"type": "rate_limited", "retry_in": retry_after, "attempt": attempt + 1}
+            await wait_before_retry(retry_after, attempt)
+            continue
+
+        result["text"] = buffered
+        result["parts"] = parts
         return
-
-    result["text"] = buffered
-    result["parts"] = parts
 
 
 async def _run_gemini(api_key, model_id, message):
@@ -421,11 +484,16 @@ async def _run_gemini(api_key, model_id, message):
 
         result = {}
         async for event in _gemini_round(url, api_key, contents, round_tools, result):
-            narration += event["text"]
+            if event["type"] == "thinking_delta":
+                narration += event["text"]
             yield event
 
         if "error" in result:
-            yield {"type": "error", "detail": result["error"]}
+            yield {
+                "type": "error",
+                "detail": result["error"],
+                "status": 429 if result.get("rate_limited") else 502,
+            }
             return
 
         parts = result.get("parts") or []

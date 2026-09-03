@@ -7,7 +7,7 @@ from pathlib import Path
 
 logger = logging.getLogger("tools.disk")
 
-MAX_OUTPUT_CHARS = 6000
+MAX_OUTPUT_CHARS = 3000
 PATH_TOKEN = "{path}"
 
 
