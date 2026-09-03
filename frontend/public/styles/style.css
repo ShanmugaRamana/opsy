@@ -319,8 +319,8 @@ body {
     top: 0;
     left: 0;
     right: 0;
-    height: 5rem;
-    background: linear-gradient(to bottom, var(--bg-color) 70%, rgba(250,245,234,0.8) 85%, transparent);
+    height: 3rem;
+    background: linear-gradient(to bottom, var(--bg-color) 20%, transparent);
     z-index: 5;
     pointer-events: none;
     opacity: 0;
@@ -330,11 +330,11 @@ body {
 .chat-fade-top::after {
     content: '';
     position: absolute;
-    bottom: -15px;
+    bottom: 0;
     left: 0;
     right: 0;
-    height: 15px;
-    background: linear-gradient(to bottom, rgba(0,0,0,0.06), transparent);
+    height: 10px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.03), transparent);
 }
 
 .main-content.is-chatting .chat-fade-top {
