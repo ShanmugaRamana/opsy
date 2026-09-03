@@ -18,7 +18,9 @@ from routers.orchestrator.ratelimit import (
     wait_before_retry,
     wait_before_transient_retry,
 )
+from routers.orchestrator import permissions
 from routers.orchestrator.schemas import CommandRun
+from routers.orchestrator.tools.command.tool import validate_argv
 from routers.orchestrator.tools.disk.tool import DISK_COMMANDS, command_label, tool_schema_properties
 
 from .prompt import DISK_AGENT_SYSTEM_PROMPT
@@ -31,6 +33,23 @@ TOOL_DESCRIPTION = (
     "Run one read-only diagnostic command about disk or storage and return its output. "
     "Some commands accept a path (a directory, or a device such as /dev/sda)."
 )
+COMMAND_TOOL_NAME = "request_command"
+COMMAND_TOOL_DESCRIPTION = (
+    "Ask the user's permission to run one read-only command that run_disk_command does not cover, "
+    "then run it if they approve. Use this only for a genuine gap - prefer run_disk_command whenever "
+    "one of its commands fits. There is no shell: give the command as an argv list, so pipes, "
+    "redirects and globs will not work. The user sees the exact command and your reason before "
+    "deciding, and may say no."
+)
+ARGV_DESCRIPTION = (
+    "The command as a list of arguments, e.g. [\"find\", \"/home\", \"-maxdepth\", \"2\", \"-type\", \"f\"]. "
+    "No shell metacharacters: they are passed literally, not interpreted."
+)
+REASON_DESCRIPTION = (
+    "One sentence, shown to the user, saying what this command will reveal and why the built-in "
+    "commands cannot answer it."
+)
+COMMAND_DECLINED = "The user declined to run this command."
 PATH_DESCRIPTION = (
     "Optional target for commands that accept one: an absolute directory path, or a device path for "
     "drive-health commands. Omit it to use the command's default."
@@ -116,6 +135,22 @@ async def _call_disk_tool(command_id, path=None):
     return f"Error calling disk tool '{command_id}': exhausted {MAX_TOOL_RETRIES} retries"
 
 
+async def _call_command_tool(request_id, argv):
+    """Runs an approved command over its real HTTP route, which re-checks the approval."""
+    try:
+        async with httpx.AsyncClient(timeout=150.0) as client:
+            response = await client.post(
+                f"{INTERNAL_API_BASE}/linux/tools/command/run",
+                json={"request_id": request_id, "argv": list(argv)},
+            )
+        if response.status_code == 403:
+            return response.json().get("detail", "This command was not approved.")
+        response.raise_for_status()
+        return response.json()["output"]
+    except (httpx.HTTPError, KeyError, ValueError) as e:
+        return f"Error running the approved command: {e}"
+
+
 async def _run_tool(command_id, path=None):
     label = command_label(command_id)
     yield {"type": "tool_call", "agent": "disk", "command": command_id, "label": label, "path": path}
@@ -128,6 +163,102 @@ async def _run_tool(command_id, path=None):
         "path": path,
         "output": output,
     }
+
+
+def _command_result(label, output):
+    return {
+        "type": "tool_result",
+        "agent": "disk",
+        "command": COMMAND_TOOL_NAME,
+        "label": label,
+        "path": None,
+        "output": output,
+    }
+
+
+async def _run_command_request(argv, reason):
+    """Asks the user to approve one ad-hoc command, then runs it if they say yes.
+
+    Nothing is executed before the user answers, and a refusal is reported to the model as a plain
+    fact - it must say the command was declined rather than inventing what it would have shown."""
+    argv = [str(token) for token in (argv or [])]
+    label = " ".join(argv) or "(no command)"
+
+    # Checked before the user is prompted, so Opsy never asks permission for something it would
+    # refuse to run anyway.
+    _, error = validate_argv(argv)
+    if error:
+        yield _command_result(label, f"That command cannot be run: {error}.")
+        return
+
+    request_id = permissions.create(argv, reason)
+    yield {
+        "type": "permission_request",
+        "agent": "disk",
+        "request_id": request_id,
+        "command": label,
+        "reason": (reason or "").strip(),
+    }
+
+    try:
+        approved = await permissions.wait(request_id)
+        yield {
+            "type": "permission_resolved",
+            "agent": "disk",
+            "request_id": request_id,
+            "command": label,
+            "approved": approved,
+        }
+
+        if not approved:
+            yield _command_result(label, COMMAND_DECLINED)
+            return
+
+        yield {
+            "type": "tool_call",
+            "agent": "disk",
+            "command": COMMAND_TOOL_NAME,
+            "label": label,
+            "path": None,
+        }
+        output = await _call_command_tool(request_id, argv)
+    finally:
+        permissions.discard(request_id)
+
+    yield _command_result(label, output)
+
+
+async def _dispatch_tool(name, args):
+    """Routes one tool call to its handler. Every path ends with a tool_result event carrying the
+    output, so callers can collect it uniformly."""
+    if name == COMMAND_TOOL_NAME:
+        async for event in _run_command_request(args.get("argv"), args.get("reason")):
+            yield event
+        return
+
+    async for event in _run_tool(args.get("command"), args.get("path")):
+        yield event
+
+
+def _record_command(commands_run, name, args, output):
+    """Adds one executed tool call to the trace record."""
+    if name == COMMAND_TOOL_NAME:
+        argv = [str(token) for token in (args.get("argv") or [])]
+        label = " ".join(argv) or "(no command)"
+        commands_run.append(
+            CommandRun(command=label, label="Approved command", path=None, output=output)
+        )
+        return
+
+    command_id = args.get("command")
+    commands_run.append(
+        CommandRun(
+            command=str(command_id),
+            label=command_label(command_id),
+            path=args.get("path"),
+            output=output,
+        )
+    )
 
 
 def _final_event(disk_report, thinking, commands_run):
@@ -173,22 +304,40 @@ def _narration_chunk(buffered, narrated, complete=False):
 # ---- Anthropic ----
 
 def _anthropic_tool_schema():
-    return {
-        "name": TOOL_NAME,
-        "description": TOOL_DESCRIPTION,
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "command": {
-                    "type": "string",
-                    "enum": list(DISK_COMMANDS.keys()),
-                    "description": _command_enum_description(),
+    return [
+        {
+            "name": TOOL_NAME,
+            "description": TOOL_DESCRIPTION,
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "enum": list(DISK_COMMANDS.keys()),
+                        "description": _command_enum_description(),
+                    },
+                    "path": {"type": "string", "description": PATH_DESCRIPTION},
                 },
-                "path": {"type": "string", "description": PATH_DESCRIPTION},
+                "required": ["command"],
             },
-            "required": ["command"],
         },
-    }
+        {
+            "name": COMMAND_TOOL_NAME,
+            "description": COMMAND_TOOL_DESCRIPTION,
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "argv": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": ARGV_DESCRIPTION,
+                    },
+                    "reason": {"type": "string", "description": REASON_DESCRIPTION},
+                },
+                "required": ["argv", "reason"],
+            },
+        },
+    ]
 
 
 async def _anthropic_round(client, model_id, messages, tools, result):
@@ -248,7 +397,7 @@ async def _anthropic_round(client, model_id, messages, tools, result):
 
 async def _run_anthropic(api_key, model_id, message):
     client = anthropic.AsyncAnthropic(api_key=api_key)
-    tools = [_anthropic_tool_schema()]
+    tools = _anthropic_tool_schema()
     messages = [{"role": "user", "content": message}]
     commands_run = []
     narration = ""
@@ -303,16 +452,13 @@ async def _run_anthropic(api_key, model_id, message):
         messages.append({"role": "assistant", "content": response.content})
         tool_results = []
         for block in tool_use_blocks:
-            command_id = (block.input or {}).get("command")
-            path = (block.input or {}).get("path")
+            args = block.input or {}
             output = None
-            async for event in _run_tool(command_id, path):
+            async for event in _dispatch_tool(block.name, args):
                 if event["type"] == "tool_result":
                     output = event["output"]
                 yield event
-            commands_run.append(
-                CommandRun(command=str(command_id), label=command_label(command_id), path=path, output=output)
-            )
+            _record_command(commands_run, block.name, args, output)
             tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
 
         messages.append({"role": "user", "content": tool_results})
@@ -324,25 +470,46 @@ async def _run_anthropic(api_key, model_id, message):
 # ---- OpenAI / Groq (OpenAI-compatible) ----
 
 def _openai_tool_schema():
-    return [{
-        "type": "function",
-        "function": {
-            "name": TOOL_NAME,
-            "description": TOOL_DESCRIPTION,
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "enum": list(DISK_COMMANDS.keys()),
-                        "description": _command_enum_description(),
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": TOOL_NAME,
+                "description": TOOL_DESCRIPTION,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "command": {
+                            "type": "string",
+                            "enum": list(DISK_COMMANDS.keys()),
+                            "description": _command_enum_description(),
+                        },
+                        "path": {"type": "string", "description": PATH_DESCRIPTION},
                     },
-                    "path": {"type": "string", "description": PATH_DESCRIPTION},
+                    "required": ["command"],
                 },
-                "required": ["command"],
             },
         },
-    }]
+        {
+            "type": "function",
+            "function": {
+                "name": COMMAND_TOOL_NAME,
+                "description": COMMAND_TOOL_DESCRIPTION,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "argv": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": ARGV_DESCRIPTION,
+                        },
+                        "reason": {"type": "string", "description": REASON_DESCRIPTION},
+                    },
+                    "required": ["argv", "reason"],
+                },
+            },
+        },
+    ]
 
 
 async def _openai_round(base_url, api_key, model_id, messages, tools, result):
@@ -524,17 +691,13 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
                 args = json.loads(call["arguments"] or "{}")
             except json.JSONDecodeError:
                 args = {}
-            command_id = args.get("command")
-            path = args.get("path")
 
             output = None
-            async for event in _run_tool(command_id, path):
+            async for event in _dispatch_tool(call["name"], args):
                 if event["type"] == "tool_result":
                     output = event["output"]
                 yield event
-            commands_run.append(
-                CommandRun(command=str(command_id), label=command_label(command_id), path=path, output=output)
-            )
+            _record_command(commands_run, call["name"], args, output)
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": output})
 
         round_index += 1
@@ -560,22 +723,40 @@ async def _run_groq(api_key, model_id, message):
 
 def _gemini_tool_schema():
     return [{
-        "functionDeclarations": [{
-            "name": TOOL_NAME,
-            "description": TOOL_DESCRIPTION,
-            "parameters": {
-                "type": "OBJECT",
-                "properties": {
-                    "command": {
-                        "type": "STRING",
-                        "enum": list(DISK_COMMANDS.keys()),
-                        "description": _command_enum_description(),
+        "functionDeclarations": [
+            {
+                "name": TOOL_NAME,
+                "description": TOOL_DESCRIPTION,
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "command": {
+                            "type": "STRING",
+                            "enum": list(DISK_COMMANDS.keys()),
+                            "description": _command_enum_description(),
+                        },
+                        "path": {"type": "STRING", "description": PATH_DESCRIPTION},
                     },
-                    "path": {"type": "STRING", "description": PATH_DESCRIPTION},
+                    "required": ["command"],
                 },
-                "required": ["command"],
             },
-        }],
+            {
+                "name": COMMAND_TOOL_NAME,
+                "description": COMMAND_TOOL_DESCRIPTION,
+                "parameters": {
+                    "type": "OBJECT",
+                    "properties": {
+                        "argv": {
+                            "type": "ARRAY",
+                            "items": {"type": "STRING"},
+                            "description": ARGV_DESCRIPTION,
+                        },
+                        "reason": {"type": "STRING", "description": REASON_DESCRIPTION},
+                    },
+                    "required": ["argv", "reason"],
+                },
+            },
+        ],
     }]
 
 
@@ -731,19 +912,16 @@ async def _run_gemini(api_key, model_id, message):
         response_parts = []
         for call in function_calls:
             args = call.get("args") or {}
-            command_id = args.get("command")
-            path = args.get("path")
+            name = call.get("name", TOOL_NAME)
 
             output = None
-            async for event in _run_tool(command_id, path):
+            async for event in _dispatch_tool(name, args):
                 if event["type"] == "tool_result":
                     output = event["output"]
                 yield event
-            commands_run.append(
-                CommandRun(command=str(command_id), label=command_label(command_id), path=path, output=output)
-            )
+            _record_command(commands_run, name, args, output)
             response_parts.append({
-                "functionResponse": {"name": call.get("name", TOOL_NAME), "response": {"result": output}}
+                "functionResponse": {"name": name, "response": {"result": output}}
             })
 
         contents.append({"role": "user", "parts": response_parts})

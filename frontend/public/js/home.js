@@ -345,6 +345,100 @@ function traceRowKey(data) {
     return `${data.command}::${data.path || ''}`;
 }
 
+// ---- Command approval ----
+
+// The agent can ask to run a command the fixed allow-lists don't cover. Nothing runs until the user
+// answers here, and the card shows the exact command that will be executed.
+const pendingPermissions = {};
+
+async function sendPermissionDecision(requestId, decision) {
+    try {
+        const response = await fetch(`${BACKEND_URL}/linux/orchestrator/permissions/${requestId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ decision }),
+        });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            appendMessage('error', friendlyError(body.detail || 'Could not send that decision.'));
+        }
+    } catch (e) {
+        appendMessage('error', 'Could not reach the backend to send that decision.');
+    }
+}
+
+function renderPermissionRequest(data) {
+    const active = ensureTrace();
+    active.details.open = true;
+
+    const card = document.createElement('div');
+    card.style.cssText = 'margin: 0.4rem 0; padding: 0.6rem; border: 1px solid var(--border); border-radius: 8px; background: var(--card-bg);';
+
+    const title = document.createElement('div');
+    title.style.cssText = 'font-weight: 600; margin-bottom: 0.3rem;';
+    title.innerText = 'Opsy wants to run a command';
+    card.appendChild(title);
+
+    if (data.reason) {
+        const reason = document.createElement('div');
+        reason.style.cssText = 'margin-bottom: 0.4rem; line-height: 1.45;';
+        reason.innerText = data.reason;
+        card.appendChild(reason);
+    }
+
+    const command = document.createElement('div');
+    command.style.cssText = 'font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; padding: 0.4rem 0.5rem; margin-bottom: 0.5rem; border-radius: 6px; background: var(--bg, rgba(0,0,0,0.05)); overflow-x: auto; white-space: pre;';
+    command.innerText = data.command;
+    card.appendChild(command);
+
+    const buttons = document.createElement('div');
+    buttons.style.cssText = 'display: flex; gap: 0.4rem;';
+
+    const decide = (decision) => {
+        Array.from(buttons.children).forEach((b) => { b.disabled = true; });
+        buttons.remove();
+        const pending = document.createElement('div');
+        pending.style.cssText = 'opacity: 0.7;';
+        pending.innerText = decision === 'approve' ? 'Approved, running...' : 'Denied.';
+        card.appendChild(pending);
+        sendPermissionDecision(data.request_id, decision);
+    };
+
+    const approve = document.createElement('button');
+    approve.innerText = 'Approve';
+    approve.style.cssText = 'padding: 0.3rem 0.7rem; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; font-family: inherit; font-size: 0.72rem;';
+    approve.addEventListener('click', () => decide('approve'));
+
+    const deny = document.createElement('button');
+    deny.innerText = 'Deny';
+    deny.style.cssText = approve.style.cssText;
+    deny.addEventListener('click', () => decide('deny'));
+
+    buttons.appendChild(approve);
+    buttons.appendChild(deny);
+    card.appendChild(buttons);
+
+    active.commands.appendChild(card);
+    pendingPermissions[data.request_id] = card;
+    setTraceHeader('Waiting for your approval');
+    chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function resolvePermissionRequest(data) {
+    const card = pendingPermissions[data.request_id];
+    delete pendingPermissions[data.request_id];
+    if (!card) return;
+
+    // Covers the timeout case, where nobody clicked and the backend denied on the user's behalf.
+    Array.from(card.querySelectorAll('button')).forEach((b) => b.remove());
+    if (!data.approved) {
+        const note = document.createElement('div');
+        note.style.cssText = 'opacity: 0.7;';
+        note.innerText = 'Not run.';
+        card.appendChild(note);
+    }
+}
+
 function startTraceRow(data) {
     const active = ensureTrace();
     
@@ -536,6 +630,12 @@ function handleOrchestratorEvent(rawEvent) {
             startRetryCycling();
             break;
         }
+        case 'permission_request':
+            renderPermissionRequest(data);
+            break;
+        case 'permission_resolved':
+            resolvePermissionRequest(data);
+            break;
         case 'tool_call':
             startTraceRow(data);
             break;

@@ -1,14 +1,38 @@
 import logging
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
+from . import permissions
 from .core import run_orchestrator
 from .schemas import OrchestratorRequest, OrchestratorResponse
 
 logger = logging.getLogger("orchestrator")
 
 router = APIRouter(prefix="/linux/orchestrator", tags=["orchestrator"])
+
+
+class PermissionDecision(BaseModel):
+    decision: str
+
+
+@router.post("/permissions/{request_id}")
+async def decide_permission(request_id: str, payload: PermissionDecision):
+    """Answers a command the agent asked to run.
+
+    The decision arrives here rather than on the WebSocket because the event stream is one-way; the
+    agent is waiting on a future that this settles."""
+    decision = payload.decision.strip().lower()
+    if decision not in ("approve", "deny"):
+        raise HTTPException(status_code=400, detail="decision must be 'approve' or 'deny'")
+
+    outcome = permissions.resolve(request_id, decision == "approve")
+    if outcome == "unknown":
+        raise HTTPException(status_code=404, detail="No such permission request, or it already expired.")
+    if outcome == "already_settled":
+        raise HTTPException(status_code=409, detail="That permission request was already answered.")
+
+    return {"request_id": request_id, "decision": decision}
 
 
 @router.post("/run", response_model=OrchestratorResponse)

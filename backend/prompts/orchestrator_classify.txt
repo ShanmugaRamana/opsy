@@ -3,6 +3,8 @@ Classify the user's message into exactly one category. Reply with only the singl
 Use "disk" for anything touching storage on the machine, including:
 - disk space, capacity, running out of space, what is taking up space, cleaning up files
 - directory or file sizes, largest files, caches, trash, logs, package or container storage
+- listing or enumerating files and directories, what is inside a folder, how many files there are
+- finding files by name, size, type or age, including the smallest or oldest files
 - partitions, block devices, drives, volumes, LVM, RAID, encrypted devices
 - filesystems, filesystem types, mounts, mount points, fstab, network or removable mounts
 - inodes, quotas, swap, zram, tmpfs
