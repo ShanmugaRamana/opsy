@@ -40,11 +40,12 @@ def upsert_key(conn, provider, encrypted_key, last4):
 
 def get_key(conn, provider):
     """Returns the encrypted key row for a provider, or None if not configured."""
-    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+    with conn.cursor() as cur:
         cur.execute("SELECT to_regclass('public.byok')")
         if cur.fetchone()[0] is None:
             return None
 
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute("SELECT api_key_encrypted FROM byok WHERE provider = %s", (provider,))
         return cur.fetchone()
 
