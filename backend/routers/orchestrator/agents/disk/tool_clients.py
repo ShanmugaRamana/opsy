@@ -14,49 +14,71 @@ from .xml import parse_disk_report
 logger = logging.getLogger("orchestrator.disk")
 
 TOOL_NAME = "run_disk_command"
-TOOL_DESCRIPTION = "Run one read-only diagnostic command about disk/storage usage and return its output."
-_HTTP_TIMEOUT = 60.0
+TOOL_DESCRIPTION = (
+    "Run one read-only diagnostic command about disk or storage and return its output. "
+    "Some commands accept a path (a directory, or a device such as /dev/sda)."
+)
+PATH_DESCRIPTION = (
+    "Optional target for commands that accept one: an absolute directory path, or a device path for "
+    "drive-health commands. Omit it to use the command's default."
+)
+MAX_TOOL_ROUNDS = 4
+MAX_TOKENS = 16000
+_HTTP_TIMEOUT = 120.0
 
 INTERNAL_API_BASE = os.getenv("INTERNAL_API_BASE", "http://127.0.0.1:8000")
 
 
-def _tool_description_text():
+def _command_enum_description():
     return "; ".join(f"{cid}: {desc}" for cid, desc in tool_schema_properties().items())
 
 
-async def _call_disk_tool(command_id):
+async def _call_disk_tool(command_id, path=None):
     """Calls the disk tool over its real HTTP route (loopback) rather than the function directly.
-    Never raises - any failure (network, 404, unexpected shape) becomes an error string, same
-    contract the in-process version had."""
+    Never raises - any failure becomes an error string the agent can reason about."""
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.get(f"{INTERNAL_API_BASE}/linux/tools/disk/{command_id}")
+        params = {"path": path} if path else None
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            response = await client.get(f"{INTERNAL_API_BASE}/linux/tools/disk/{command_id}", params=params)
         if response.status_code == 404:
             return response.json().get("detail", f"Unknown command '{command_id}'")
         response.raise_for_status()
         return response.json()["output"]
-    except (httpx.HTTPError, KeyError) as e:
+    except (httpx.HTTPError, KeyError, ValueError) as e:
         return f"Error calling disk tool '{command_id}': {e}"
 
 
-async def _run_tool(command_id):
+async def _run_tool(command_id, path=None):
     label = command_label(command_id)
-    yield {"type": "tool_call", "agent": "disk", "command": command_id, "label": label}
-    output = await _call_disk_tool(command_id)
-    yield {"type": "tool_result", "agent": "disk", "command": command_id, "label": label, "output": output}
+    yield {"type": "tool_call", "agent": "disk", "command": command_id, "label": label, "path": path}
+    output = await _call_disk_tool(command_id, path)
+    yield {
+        "type": "tool_result",
+        "agent": "disk",
+        "command": command_id,
+        "label": label,
+        "path": path,
+        "output": output,
+    }
 
 
 def _final_event(disk_report, thinking, commands_run):
     return {
         "type": "final",
         "mode": "disk",
-        "thinking": thinking,
+        "thinking": thinking.strip() or None,
         "disk_report": disk_report.model_dump(),
         "commands_run": [cr.model_dump() for cr in commands_run],
     }
 
 
-# ---- Anthropic: native tool_use / tool_result blocks ----
+def _is_xml(buffered):
+    """The final answer is pure XML; narration is prose. Once the buffer opens with '<' we stop
+    treating it as narration so the XML never streams into the thinking panel."""
+    return buffered.lstrip().startswith("<")
+
+
+# ---- Anthropic ----
 
 def _anthropic_tool_schema():
     return {
@@ -68,63 +90,88 @@ def _anthropic_tool_schema():
                 "command": {
                     "type": "string",
                     "enum": list(DISK_COMMANDS.keys()),
-                    "description": _tool_description_text(),
-                }
+                    "description": _command_enum_description(),
+                },
+                "path": {"type": "string", "description": PATH_DESCRIPTION},
             },
             "required": ["command"],
         },
     }
 
 
+async def _anthropic_round(client, model_id, messages, tools, result):
+    buffered = ""
+    kwargs = {
+        "model": model_id,
+        "max_tokens": MAX_TOKENS,
+        "system": DISK_AGENT_SYSTEM_PROMPT,
+        "messages": messages,
+    }
+    if tools:
+        kwargs["tools"] = tools
+
+    try:
+        async with client.messages.stream(**kwargs) as stream:
+            async for event in stream:
+                if event.type == "content_block_delta" and getattr(event.delta, "type", "") == "text_delta":
+                    buffered += event.delta.text
+                    if not _is_xml(buffered):
+                        yield {"type": "thinking_delta", "text": event.delta.text}
+            result["message"] = await stream.get_final_message()
+    except anthropic.APIError as e:
+        result["error"] = str(e)
+
+
 async def _run_anthropic(api_key, model_id, message):
     client = anthropic.AsyncAnthropic(api_key=api_key)
     tools = [_anthropic_tool_schema()]
     messages = [{"role": "user", "content": message}]
-
-    try:
-        response = await client.messages.create(
-            model=model_id, max_tokens=16000, system=DISK_AGENT_SYSTEM_PROMPT, tools=tools, messages=messages
-        )
-    except anthropic.APIError as e:
-        yield {"type": "error", "detail": str(e)}
-        return
-
-    tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
-    thinking_text = None
     commands_run = []
+    narration = ""
+    final_text = ""
 
-    if tool_use_blocks:
-        # only meaningful when the model also explained itself before calling a tool - if there's
-        # no tool call, this same text is the final answer (captured as final_text below instead),
-        # not "thinking"
-        thinking_text = next((b.text for b in response.content if b.type == "text"), None)
+    for round_index in range(MAX_TOOL_ROUNDS + 1):
+        # The extra final round runs without tools, forcing an answer once the cap is reached.
+        round_tools = tools if round_index < MAX_TOOL_ROUNDS else None
+
+        result = {}
+        async for event in _anthropic_round(client, model_id, messages, round_tools, result):
+            narration += event["text"]
+            yield event
+
+        if "error" in result:
+            yield {"type": "error", "detail": result["error"]}
+            return
+
+        response = result["message"]
+        tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
+        text = "".join(b.text for b in response.content if b.type == "text")
+
+        if not tool_use_blocks:
+            final_text = text
+            break
+
         messages.append({"role": "assistant", "content": response.content})
         tool_results = []
         for block in tool_use_blocks:
-            command_id = block.input.get("command")
+            command_id = (block.input or {}).get("command")
+            path = (block.input or {}).get("path")
             output = None
-            async for event in _run_tool(command_id):
+            async for event in _run_tool(command_id, path):
                 if event["type"] == "tool_result":
                     output = event["output"]
                 yield event
-            commands_run.append(CommandRun(command=command_id, label=command_label(command_id), output=output))
+            commands_run.append(
+                CommandRun(command=str(command_id), label=command_label(command_id), path=path, output=output)
+            )
             tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": output})
 
         messages.append({"role": "user", "content": tool_results})
 
-        try:
-            response = await client.messages.create(
-                model=model_id, max_tokens=16000, system=DISK_AGENT_SYSTEM_PROMPT, messages=messages
-            )
-        except anthropic.APIError as e:
-            yield {"type": "error", "detail": str(e)}
-            return
-
-    final_text = next((b.text for b in response.content if b.type == "text"), "")
-    yield _final_event(parse_disk_report(final_text), thinking_text, commands_run)
+    yield _final_event(parse_disk_report(final_text), narration, commands_run)
 
 
-# ---- OpenAI / Groq: OpenAI-compatible function calling ----
+# ---- OpenAI / Groq (OpenAI-compatible) ----
 
 def _openai_tool_schema():
     return [{
@@ -138,13 +185,77 @@ def _openai_tool_schema():
                     "command": {
                         "type": "string",
                         "enum": list(DISK_COMMANDS.keys()),
-                        "description": _tool_description_text(),
-                    }
+                        "description": _command_enum_description(),
+                    },
+                    "path": {"type": "string", "description": PATH_DESCRIPTION},
                 },
                 "required": ["command"],
             },
         },
     }]
+
+
+async def _openai_round(base_url, api_key, model_id, messages, tools, result):
+    payload = {"model": model_id, "messages": messages, "stream": True}
+    if tools:
+        payload["tools"] = tools
+        payload["tool_choice"] = "auto"
+
+    buffered = ""
+    tool_calls = {}
+
+    try:
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+            async with client.stream(
+                "POST", base_url, headers={"Authorization": f"Bearer {api_key}"}, json=payload
+            ) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    result["error"] = f"{response.status_code}: {body.decode(errors='replace')[:300]}"
+                    return
+
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if not data or data == "[DONE]":
+                        continue
+
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+
+                    text = delta.get("content")
+                    if text:
+                        buffered += text
+                        if not _is_xml(buffered):
+                            yield {"type": "thinking_delta", "text": text}
+
+                    # Streamed tool calls arrive as fragments: the id and name land early, while
+                    # `arguments` builds up across chunks and is only parseable once the round ends.
+                    for fragment in delta.get("tool_calls") or []:
+                        slot = tool_calls.setdefault(
+                            fragment.get("index", 0), {"id": "", "name": "", "arguments": ""}
+                        )
+                        if fragment.get("id"):
+                            slot["id"] = fragment["id"]
+                        function = fragment.get("function") or {}
+                        if function.get("name"):
+                            slot["name"] = function["name"]
+                        if function.get("arguments"):
+                            slot["arguments"] += function["arguments"]
+    except httpx.HTTPError as e:
+        result["error"] = str(e)
+        return
+
+    result["text"] = buffered
+    result["tool_calls"] = [tool_calls[index] for index in sorted(tool_calls)]
 
 
 async def _run_openai_compatible(base_url, api_key, model_id, message):
@@ -153,57 +264,59 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
         {"role": "system", "content": DISK_AGENT_SYSTEM_PROMPT},
         {"role": "user", "content": message},
     ]
-
-    try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            response = await client.post(
-                base_url,
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={"model": model_id, "messages": messages, "tools": tools, "tool_choice": "auto"},
-            )
-        response.raise_for_status()
-        message_obj = response.json()["choices"][0]["message"]
-    except (httpx.HTTPError, KeyError, IndexError) as e:
-        yield {"type": "error", "detail": str(e)}
-        return
-
-    tool_calls = message_obj.get("tool_calls") or []
-    thinking_text = None
     commands_run = []
+    narration = ""
+    final_text = ""
 
-    if tool_calls:
-        thinking_text = message_obj.get("content")
-        messages.append(message_obj)
-        for call in tool_calls:
+    for round_index in range(MAX_TOOL_ROUNDS + 1):
+        round_tools = tools if round_index < MAX_TOOL_ROUNDS else None
+
+        result = {}
+        async for event in _openai_round(base_url, api_key, model_id, messages, round_tools, result):
+            narration += event["text"]
+            yield event
+
+        if "error" in result:
+            yield {"type": "error", "detail": result["error"]}
+            return
+
+        calls = result.get("tool_calls") or []
+        if not calls:
+            final_text = result.get("text", "")
+            break
+
+        messages.append({
+            "role": "assistant",
+            "content": result.get("text") or None,
+            "tool_calls": [
+                {
+                    "id": call["id"],
+                    "type": "function",
+                    "function": {"name": call["name"], "arguments": call["arguments"] or "{}"},
+                }
+                for call in calls
+            ],
+        })
+
+        for call in calls:
             try:
-                args = json.loads(call["function"]["arguments"])
-            except (json.JSONDecodeError, KeyError):
+                args = json.loads(call["arguments"] or "{}")
+            except json.JSONDecodeError:
                 args = {}
             command_id = args.get("command")
+            path = args.get("path")
 
             output = None
-            async for event in _run_tool(command_id):
+            async for event in _run_tool(command_id, path):
                 if event["type"] == "tool_result":
                     output = event["output"]
                 yield event
-            commands_run.append(CommandRun(command=command_id, label=command_label(command_id), output=output))
+            commands_run.append(
+                CommandRun(command=str(command_id), label=command_label(command_id), path=path, output=output)
+            )
             messages.append({"role": "tool", "tool_call_id": call["id"], "content": output})
 
-        try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-                response = await client.post(
-                    base_url,
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={"model": model_id, "messages": messages},
-                )
-            response.raise_for_status()
-            message_obj = response.json()["choices"][0]["message"]
-        except (httpx.HTTPError, KeyError, IndexError) as e:
-            yield {"type": "error", "detail": str(e)}
-            return
-
-    final_text = message_obj.get("content") or ""
-    yield _final_event(parse_disk_report(final_text), thinking_text, commands_run)
+    yield _final_event(parse_disk_report(final_text), narration, commands_run)
 
 
 async def _run_openai(api_key, model_id, message):
@@ -220,7 +333,7 @@ async def _run_groq(api_key, model_id, message):
         yield event
 
 
-# ---- Gemini: functionCall / functionResponse ----
+# ---- Gemini ----
 
 def _gemini_tool_schema():
     return [{
@@ -233,8 +346,9 @@ def _gemini_tool_schema():
                     "command": {
                         "type": "STRING",
                         "enum": list(DISK_COMMANDS.keys()),
-                        "description": _tool_description_text(),
-                    }
+                        "description": _command_enum_description(),
+                    },
+                    "path": {"type": "STRING", "description": PATH_DESCRIPTION},
                 },
                 "required": ["command"],
             },
@@ -242,68 +356,107 @@ def _gemini_tool_schema():
     }]
 
 
-async def _run_gemini(api_key, model_id, message):
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
-    contents = [{"role": "user", "parts": [{"text": message}]}]
+async def _gemini_round(url, api_key, contents, tools, result):
+    payload = {
+        "system_instruction": {"parts": [{"text": DISK_AGENT_SYSTEM_PROMPT}]},
+        "contents": contents,
+    }
+    if tools:
+        payload["tools"] = tools
+
+    buffered = ""
+    parts = []
 
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            response = await client.post(
-                url,
-                params={"key": api_key},
-                json={
-                    "system_instruction": {"parts": [{"text": DISK_AGENT_SYSTEM_PROMPT}]},
-                    "contents": contents,
-                    "tools": _gemini_tool_schema(),
-                },
-            )
-        response.raise_for_status()
-        parts = response.json()["candidates"][0]["content"]["parts"]
-    except (httpx.HTTPError, KeyError, IndexError) as e:
-        yield {"type": "error", "detail": str(e)}
+            async with client.stream(
+                "POST", url, params={"key": api_key, "alt": "sse"}, json=payload
+            ) as response:
+                if response.status_code >= 400:
+                    body = await response.aread()
+                    result["error"] = f"{response.status_code}: {body.decode(errors='replace')[:300]}"
+                    return
+
+                async for line in response.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if not data:
+                        continue
+
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+
+                    candidates = chunk.get("candidates") or []
+                    if not candidates:
+                        continue
+
+                    for part in candidates[0].get("content", {}).get("parts", []) or []:
+                        parts.append(part)
+                        text = part.get("text")
+                        if text:
+                            buffered += text
+                            if not _is_xml(buffered):
+                                yield {"type": "thinking_delta", "text": text}
+    except httpx.HTTPError as e:
+        result["error"] = str(e)
         return
 
-    function_calls = [p["functionCall"] for p in parts if "functionCall" in p]
-    thinking_text = None
-    commands_run = []
+    result["text"] = buffered
+    result["parts"] = parts
 
-    if function_calls:
-        thinking_text = next((p["text"] for p in parts if "text" in p), None)
+
+async def _run_gemini(api_key, model_id, message):
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:streamGenerateContent"
+    tools = _gemini_tool_schema()
+    contents = [{"role": "user", "parts": [{"text": message}]}]
+    commands_run = []
+    narration = ""
+    final_text = ""
+
+    for round_index in range(MAX_TOOL_ROUNDS + 1):
+        round_tools = tools if round_index < MAX_TOOL_ROUNDS else None
+
+        result = {}
+        async for event in _gemini_round(url, api_key, contents, round_tools, result):
+            narration += event["text"]
+            yield event
+
+        if "error" in result:
+            yield {"type": "error", "detail": result["error"]}
+            return
+
+        parts = result.get("parts") or []
+        function_calls = [part["functionCall"] for part in parts if "functionCall" in part]
+
+        if not function_calls:
+            final_text = result.get("text", "")
+            break
+
         contents.append({"role": "model", "parts": parts})
         response_parts = []
         for call in function_calls:
-            command_id = call.get("args", {}).get("command")
+            args = call.get("args") or {}
+            command_id = args.get("command")
+            path = args.get("path")
 
             output = None
-            async for event in _run_tool(command_id):
+            async for event in _run_tool(command_id, path):
                 if event["type"] == "tool_result":
                     output = event["output"]
                 yield event
-            commands_run.append(CommandRun(command=command_id, label=command_label(command_id), output=output))
+            commands_run.append(
+                CommandRun(command=str(command_id), label=command_label(command_id), path=path, output=output)
+            )
             response_parts.append({
                 "functionResponse": {"name": call.get("name", TOOL_NAME), "response": {"result": output}}
             })
 
         contents.append({"role": "user", "parts": response_parts})
 
-        try:
-            async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-                response = await client.post(
-                    url,
-                    params={"key": api_key},
-                    json={
-                        "system_instruction": {"parts": [{"text": DISK_AGENT_SYSTEM_PROMPT}]},
-                        "contents": contents,
-                    },
-                )
-            response.raise_for_status()
-            parts = response.json()["candidates"][0]["content"]["parts"]
-        except (httpx.HTTPError, KeyError, IndexError) as e:
-            yield {"type": "error", "detail": str(e)}
-            return
-
-    final_text = "".join(p.get("text", "") for p in parts)
-    yield _final_event(parse_disk_report(final_text), thinking_text, commands_run)
+    yield _final_event(parse_disk_report(final_text), narration, commands_run)
 
 
 _AGENTS = {

@@ -10,6 +10,7 @@ class OrchestratorRequest(BaseModel):
 class CommandRun(BaseModel):
     command: str
     label: str
+    path: str | None = None
     output: str
 
 
@@ -18,12 +19,23 @@ class TopConsumer(BaseModel):
     size_gb: float | None = None
 
 
-class DiskReport(BaseModel):
-    summary: str
+class Fact(BaseModel):
+    label: str
+    value: str
+
+
+class Capacity(BaseModel):
     free_gb: float | None = None
     total_gb: float | None = None
     percent_used: float | None = None
     severity: str | None = None
+
+
+class DiskReport(BaseModel):
+    summary: str
+    explanation: str | None = None
+    capacity: Capacity | None = None
+    facts: list[Fact] = []
     top_consumers: list[TopConsumer] = []
     suggestion: str | None = None
 

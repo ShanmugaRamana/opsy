@@ -1,3 +1,12 @@
 Classify the user's message into exactly one category. Reply with only the single word "disk" or "general" and nothing else.
 
-Use "disk" for anything about disk space, storage capacity, running out of space, what's taking up space, cleaning up files, partitions, or mounted drives. Otherwise use "general".
+Use "disk" for anything touching storage on the machine, including:
+- disk space, capacity, running out of space, what is taking up space, cleaning up files
+- directory or file sizes, largest files, caches, trash, logs, package or container storage
+- partitions, block devices, drives, volumes, LVM, RAID, encrypted devices
+- filesystems, filesystem types, mounts, mount points, fstab, network or removable mounts
+- inodes, quotas, swap, zram, tmpfs
+- drive health, SMART data, disk errors, I/O errors, failing or degraded disks
+- disk performance and I/O activity
+
+Otherwise use "general".

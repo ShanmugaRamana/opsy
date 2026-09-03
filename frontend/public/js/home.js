@@ -239,58 +239,163 @@ let orchestratorSocket = null;
 
 const SEVERITY_COLORS = { plenty: '#2ecc71', moderate: '#f1c40f', tight: '#e67e22', critical: '#e74c3c' };
 
-let activeTrace = null;
-let traceRows = {};
+// The live trace for the turn in flight: a panel that exists from the first event, updates its own
+// header as work happens, and collapses once the answer lands.
+let trace = null;
 
 function startTrace() {
+    chatLog.style.display = 'flex';
+
     const details = document.createElement('details');
-    details.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.72rem; color: var(--text-secondary, #888); margin-top: 0.25rem;';
+    details.open = true;
+    details.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.72rem; color: var(--text-secondary, #888); border-left: 2px solid var(--border); padding-left: 0.6rem; margin: 0.25rem 0;';
+
     const summary = document.createElement('summary');
-    summary.style.cursor = 'pointer';
-    summary.innerText = '🔍 How I checked this';
+    summary.style.cssText = 'cursor: pointer; list-style: none; font-weight: 500;';
+    summary.innerText = 'Starting';
     details.appendChild(summary);
+
+    const thinking = document.createElement('div');
+    thinking.style.cssText = 'white-space: pre-wrap; font-style: italic; padding: 0.2rem 0; line-height: 1.45;';
+    details.appendChild(thinking);
+
+    const commands = document.createElement('div');
+    details.appendChild(commands);
+
     chatLog.appendChild(details);
-    activeTrace = details;
-    traceRows = {};
-    return details;
+    trace = { details, summary, thinking, commands, rows: {}, count: 0, labels: [] };
+    return trace;
 }
 
-function traceRow(command, label) {
-    if (!activeTrace) startTrace();
+function ensureTrace() {
+    return trace || startTrace();
+}
+
+// The header is never a fixed string: it names whatever is happening right now, then settles into a
+// summary of what was actually run.
+function setTraceHeader(text) {
+    ensureTrace().summary.innerText = text;
+}
+
+function appendThinkingDelta(text) {
+    const active = ensureTrace();
+    active.thinking.innerText += text;
+    if (active.count === 0) setTraceHeader('Thinking');
+    chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function traceRowKey(data) {
+    return `${data.command}::${data.path || ''}`;
+}
+
+function startTraceRow(data) {
+    const active = ensureTrace();
+    const target = data.path ? `${data.label} (${data.path})` : data.label;
+
     const row = document.createElement('div');
-    row.style.cssText = 'padding: 0.15rem 0; white-space: pre-wrap; word-break: break-word;';
-    row.innerText = `Running: ${label}…`;
-    activeTrace.appendChild(row);
-    traceRows[command] = row;
-    return row;
+    row.style.cssText = 'padding: 0.15rem 0; word-break: break-word;';
+    row.innerText = `Running ${target}`;
+    active.commands.appendChild(row);
+
+    active.rows[traceRowKey(data)] = { row, target };
+    active.count += 1;
+    active.labels.push(target);
+    setTraceHeader(`Running ${target}`);
+    chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function finishTraceRow(data) {
+    const active = ensureTrace();
+    const entry = active.rows[traceRowKey(data)];
+    if (!entry) return;
+
+    const output = document.createElement('div');
+    output.style.cssText = 'white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin: 0.1rem 0 0.4rem 0.6rem;';
+    output.innerText = data.output;
+
+    entry.row.innerText = entry.target;
+    entry.row.style.fontWeight = '500';
+    entry.row.insertAdjacentElement('afterend', output);
+    setTraceHeader(`Checked ${entry.target}`);
+}
+
+function closeTrace() {
+    if (!trace) return;
+    const { count, labels } = trace;
+    if (count === 0) {
+        setTraceHeader('How I checked this: reasoning only, no commands run');
+    } else if (count === 1) {
+        setTraceHeader(`How I checked this: ${labels[0]}`);
+    } else {
+        setTraceHeader(`How I checked this: ${count} commands, ending with ${labels[count - 1]}`);
+    }
+    trace.details.open = false;
+    trace = null;
+}
+
+function appendBlock(text, styles) {
+    chatLog.style.display = 'flex';
+    const block = document.createElement('div');
+    block.style.cssText = `font-family: 'Inter', sans-serif; white-space: pre-wrap; ${styles}`;
+    block.innerText = text;
+    chatLog.appendChild(block);
+    return block;
 }
 
 function renderDiskReport(report) {
     if (!report) return;
 
     if (report.summary) appendMessage('assistant', report.summary);
+    if (report.explanation) {
+        appendBlock(report.explanation, 'font-size: 0.82rem; line-height: 1.5; padding: 0 0.9rem; opacity: 0.9;');
+    }
 
-    if (report.percent_used != null) {
+    const capacity = report.capacity;
+    if (capacity && capacity.percent_used != null) {
         const barWrap = document.createElement('div');
-        barWrap.style.cssText = 'width: 100%; max-width: 400px; margin: 0.25rem 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; height: 10px;';
+        barWrap.style.cssText = 'width: 100%; max-width: 400px; margin: 0.4rem 0.9rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; height: 10px;';
         const bar = document.createElement('div');
-        const pct = Math.min(100, Math.max(0, report.percent_used));
-        const color = SEVERITY_COLORS[report.severity] || '#888';
-        bar.style.cssText = `height: 100%; width: ${pct}%; background: ${color};`;
+        const pct = Math.min(100, Math.max(0, capacity.percent_used));
+        bar.style.cssText = `height: 100%; width: ${pct}%; background: ${SEVERITY_COLORS[capacity.severity] || '#888'};`;
         barWrap.appendChild(bar);
         chatLog.appendChild(barWrap);
+
+        const parts = [`${pct}% used`];
+        if (capacity.free_gb != null && capacity.total_gb != null) {
+            parts.push(`${capacity.free_gb} GB free of ${capacity.total_gb} GB`);
+        }
+        if (capacity.severity) parts.push(capacity.severity);
+        appendBlock(parts.join(' · '), 'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.75;');
+    }
+
+    if (report.facts && report.facts.length > 0) {
+        const table = document.createElement('table');
+        table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse;';
+        report.facts.forEach((fact) => {
+            const tr = document.createElement('tr');
+            const label = document.createElement('td');
+            label.style.cssText = 'padding: 0.15rem 0.9rem 0.15rem 0; opacity: 0.7; vertical-align: top;';
+            label.innerText = fact.label;
+            const value = document.createElement('td');
+            value.style.cssText = 'padding: 0.15rem 0; word-break: break-word;';
+            value.innerText = fact.value;
+            tr.appendChild(label);
+            tr.appendChild(value);
+            table.appendChild(tr);
+        });
+        chatLog.appendChild(table);
     }
 
     if (report.top_consumers && report.top_consumers.length > 0) {
-        const list = document.createElement('div');
-        list.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.8rem; margin: 0.25rem 0; white-space: pre-wrap;';
-        list.innerText = report.top_consumers
-            .map((c) => `${c.label}: ${c.size_gb != null ? c.size_gb + ' GB' : '?'}`)
+        const text = report.top_consumers
+            .map((c) => `${c.label}: ${c.size_gb != null ? c.size_gb + ' GB' : 'size unknown'}`)
             .join('\n');
-        chatLog.appendChild(list);
+        appendBlock(text, 'font-size: 0.8rem; padding: 0.2rem 0.9rem; line-height: 1.5;');
     }
 
-    if (report.suggestion) appendMessage('thinking', `💡 ${report.suggestion}`);
+    if (report.suggestion) {
+        appendBlock(report.suggestion, 'font-size: 0.8rem; padding: 0.4rem 0.9rem; line-height: 1.5; border-left: 2px solid var(--border); margin: 0.3rem 0.9rem;');
+    }
 }
 
 function handleOrchestratorEvent(rawEvent) {
@@ -302,25 +407,35 @@ function handleOrchestratorEvent(rawEvent) {
     }
 
     switch (data.type) {
+        case 'started':
+            startTrace();
+            break;
+        case 'classified':
+            setTraceHeader(data.mode === 'disk' ? 'Checking storage' : 'Answering');
+            break;
+        case 'thinking_delta':
+            appendThinkingDelta(data.text);
+            break;
         case 'tool_call':
-            traceRow(data.command, data.label);
+            startTraceRow(data);
             break;
-        case 'tool_result': {
-            const row = traceRows[data.command];
-            if (row) row.innerText = `${data.label}: ${data.output}`;
+        case 'tool_result':
+            finishTraceRow(data);
             break;
-        }
         case 'final':
-            activeTrace = null;
+            // The general path doesn't stream, so its thinking arrives whole; keep it in the panel.
+            if (data.thinking && trace && !trace.thinking.innerText) {
+                trace.thinking.innerText = data.thinking;
+            }
+            closeTrace();
             if (data.mode === 'disk') {
                 renderDiskReport(data.disk_report);
             } else {
-                if (data.thinking) appendMessage('thinking', data.thinking);
                 appendMessage('assistant', data.content);
             }
             break;
         case 'error':
-            activeTrace = null;
+            closeTrace();
             appendMessage('error', `Error: ${data.detail}`);
             break;
     }
