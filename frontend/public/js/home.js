@@ -204,3 +204,63 @@ async function loadProviderAndModelDropdowns() {
 }
 
 loadProviderAndModelDropdowns();
+
+// ---- Send message to the orchestrator ----
+
+const chatLog = document.getElementById('chat-log');
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+function appendMessage(role, text) {
+    chatLog.style.display = 'flex';
+    const bubble = document.createElement('div');
+    bubble.className = `chat-message chat-message-${role}`;
+    bubble.style.cssText = 'padding: 0.6rem 0.9rem; border-radius: 10px; font-family: \'Inter\', sans-serif; font-size: 0.85rem; line-height: 1.4; white-space: pre-wrap;';
+    if (role === 'user') {
+        bubble.style.alignSelf = 'flex-end';
+        bubble.style.background = 'var(--card-bg)';
+        bubble.style.border = '1px solid var(--border)';
+    } else if (role === 'thinking') {
+        bubble.style.color = 'var(--text-secondary, #888)';
+        bubble.style.fontSize = '0.75rem';
+        bubble.style.fontStyle = 'italic';
+    } else if (role === 'error') {
+        bubble.style.color = '#c0392b';
+    }
+    bubble.innerText = text;
+    chatLog.appendChild(bubble);
+    return bubble;
+}
+
+async function sendMessage() {
+    const message = chatInput.value.trim();
+    if (!message || !selectedProvider || !selectedModelId) return;
+
+    chatInput.value = '';
+    appendMessage('user', message);
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/linux/orchestrator/run`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                provider: selectedProvider,
+                model_id: selectedModelId,
+                message,
+            }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || `request failed: ${res.status}`);
+
+        if (data.thinking) appendMessage('thinking', data.thinking);
+        appendMessage('assistant', data.content);
+    } catch (e) {
+        appendMessage('error', `Error: ${e.message}`);
+    }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendMessage();
+});

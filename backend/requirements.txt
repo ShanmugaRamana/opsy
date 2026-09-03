@@ -5,3 +5,4 @@ python-dotenv
 psutil
 httpx
 cryptography
+anthropic

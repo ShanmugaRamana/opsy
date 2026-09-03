@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import byok, hardware, health, models, onboarding, root, system, user
+from routers import byok, hardware, health, models, onboarding, orchestrator, root, system, user
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s - %(message)s")
 
@@ -24,3 +24,4 @@ app.include_router(user.router)
 app.include_router(hardware.router)
 app.include_router(byok.router)
 app.include_router(models.router)
+app.include_router(orchestrator.router)
