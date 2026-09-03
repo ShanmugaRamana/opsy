@@ -3,7 +3,15 @@ from fastapi import APIRouter, HTTPException
 
 from .tool import DISK_COMMANDS, command_label, execute_disk_command
 
-router = APIRouter(prefix="/linux/tools/disk", tags=["tools", "disk"])
+router = APIRouter(prefix="/linux/tools/disk", tags=["tools"])
+
+# Self-description picked up by the top-level tools catalog (GET /linux/tools/) — adding a new
+# tool group means adding one entry to that catalog's list, not editing it in place.
+TOOL_GROUP_INFO = {
+    "name": "disk",
+    "description": "Read-only disk and storage diagnostic commands.",
+    "catalog_path": "/linux/tools/disk/",
+}
 
 
 @router.get("/")

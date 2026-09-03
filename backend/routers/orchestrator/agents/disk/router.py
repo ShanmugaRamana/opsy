@@ -7,7 +7,15 @@ from .tool_clients import run_disk_agent
 
 logger = logging.getLogger("orchestrator.disk")
 
-router = APIRouter(prefix="/linux/agents/disk", tags=["agents", "disk"])
+router = APIRouter(prefix="/linux/agents/disk", tags=["agents"])
+
+# Self-description picked up by the top-level agents catalog (GET /linux/agents/) — adding a new
+# agent means adding one entry to that catalog's list, not editing it in place.
+AGENT_INFO = {
+    "name": "disk",
+    "description": "Answers disk and storage questions by running read-only diagnostic commands.",
+    "ws_path": "/linux/agents/disk/ws",
+}
 
 
 class DiskAgentRequest(BaseModel):
@@ -15,6 +23,13 @@ class DiskAgentRequest(BaseModel):
     api_key: str = Field(min_length=1)
     model_id: str
     message: str = Field(min_length=1)
+
+
+@router.get("/")
+async def get_disk_agent():
+    """This agent's own record — the single-item view of its entry in the GET /linux/agents/
+    catalog, mirroring how GET /linux/tools/disk/ is the single-group view under /linux/tools/."""
+    return AGENT_INFO
 
 
 @router.websocket("/ws")

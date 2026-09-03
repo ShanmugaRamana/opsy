@@ -13,7 +13,7 @@ from routers.orchestrator.ratelimit import (
     wait_before_retry,
 )
 from routers.orchestrator.schemas import CommandRun
-from routers.tools.disk.tool import DISK_COMMANDS, command_label, tool_schema_properties
+from routers.orchestrator.tools.disk.tool import DISK_COMMANDS, command_label, tool_schema_properties
 
 from .prompt import DISK_AGENT_SYSTEM_PROMPT
 from .xml import parse_disk_report
