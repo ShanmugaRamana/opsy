@@ -218,7 +218,7 @@ function scrollChatToBottom() {
 
 function appendMessage(role, text) {
     chatLog.style.display = 'flex';
-    document.getElementById('greeting-container').classList.add('chat-active');
+    document.querySelector('.main-content').classList.add('is-chatting');
     const bubble = document.createElement('div');
     bubble.className = `chat-message chat-message-${role}`;
     bubble.style.cssText = 'padding: 0.6rem 0.9rem; border-radius: 10px; font-family: \'Inter\', sans-serif; font-size: 0.85rem; line-height: 1.4; white-space: pre-wrap;';
@@ -252,7 +252,7 @@ let trace = null;
 
 function startTrace() {
     chatLog.style.display = 'flex';
-    document.getElementById('greeting-container').classList.add('chat-active');
+    document.querySelector('.main-content').classList.add('is-chatting');
 
     const details = document.createElement('details');
     details.open = true;
@@ -384,7 +384,7 @@ function countdownRetry(row, seconds) {
 
 function appendBlock(text, styles) {
     chatLog.style.display = 'flex';
-    document.getElementById('greeting-container').classList.add('chat-active');
+    document.querySelector('.main-content').classList.add('is-chatting');
     const block = document.createElement('div');
     block.style.cssText = `font-family: 'Inter', sans-serif; white-space: pre-wrap; ${styles}`;
     block.innerText = text;

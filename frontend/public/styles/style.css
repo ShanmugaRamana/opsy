@@ -279,14 +279,17 @@ body {
     align-items: center;
     justify-content: center;
     gap: 1rem;
-    margin: 30vh auto 3rem auto;
+    margin: 0 auto 2rem auto;
     width: 100%;
     pointer-events: none;
-    transition: margin-top 0.3s ease;
+    transition: opacity 0.3s ease, height 0.3s ease, margin 0.3s ease;
+    overflow: hidden;
 }
 
-.greeting-container.chat-active {
-    margin-top: 2rem;
+.main-content.is-chatting .greeting-container {
+    opacity: 0;
+    height: 0;
+    margin: 0;
 }
 
 .greeting-logo {
@@ -309,25 +312,62 @@ body {
     top: 0;
     left: 0;
     right: 0;
-    height: 6rem;
-    background: linear-gradient(to bottom, var(--bg-color) 40%, transparent);
+    height: 5rem;
+    background: linear-gradient(to bottom, var(--bg-color) 70%, rgba(250,245,234,0.8) 85%, transparent);
     z-index: 5;
     pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.chat-fade-top::after {
+    content: '';
+    position: absolute;
+    bottom: -15px;
+    left: 0;
+    right: 0;
+    height: 15px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.06), transparent);
+}
+
+.main-content.is-chatting .chat-fade-top {
+    opacity: 1;
 }
 
 .chat-scroll-area {
-    flex-grow: 1;
+    flex-grow: 0;
+    margin-top: auto;
     width: 100%;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    padding-top: 5rem;
-    padding-bottom: 2rem;
-    scrollbar-width: none;
+    padding-top: 0;
+    padding-bottom: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+.main-content.is-chatting .chat-scroll-area {
+    flex-grow: 1;
+    margin-top: 0;
+    padding-top: 5rem;
+    padding-bottom: 2rem;
+}
+
+/* Modern Scrollbar */
 .chat-scroll-area::-webkit-scrollbar {
-    display: none;
+    width: 6px;
+}
+.chat-scroll-area::-webkit-scrollbar-track {
+    background: transparent;
+}
+.chat-scroll-area::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 10px;
+}
+.chat-scroll-area::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(0, 0, 0, 0.4);
 }
 
 .chat-wrapper {
@@ -344,6 +384,12 @@ body {
     padding: 0 1rem 2rem 1rem;
     z-index: 10;
     background-color: var(--bg-color);
+    margin-bottom: auto;
+    transition: margin 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.main-content.is-chatting .chat-input-wrapper {
+    margin-bottom: 0;
 }
 .chat-input-wrapper .chat-input-container,
 .chat-input-wrapper .model-selectors {
