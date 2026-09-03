@@ -85,10 +85,20 @@ def _final_event(disk_report, thinking, commands_run):
     }
 
 
-def _is_xml(buffered):
-    """The final answer is pure XML; narration is prose. Once the buffer opens with '<' we stop
-    treating it as narration so the XML never streams into the thinking panel."""
-    return buffered.lstrip().startswith("<")
+def _narration_delta(buffered, delta):
+    """Returns the part of `delta` that is still narration, given everything buffered before it.
+
+    The final answer is XML and narration is prose, so narration ends at the first '<'. Cutting at
+    that character rather than testing whole chunks matters because a chunk boundary can split a tag
+    ('<disk_repo' + 'rt>'), which would otherwise leak into the thinking panel."""
+    if "<" in buffered:
+        return ""
+
+    combined = buffered + delta
+    index = combined.find("<")
+    if index == -1:
+        return delta
+    return combined[len(buffered):index]
 
 
 # ---- Anthropic ----
@@ -129,9 +139,10 @@ async def _anthropic_round(client, model_id, messages, tools, result):
             async with client.messages.stream(**kwargs) as stream:
                 async for event in stream:
                     if event.type == "content_block_delta" and getattr(event.delta, "type", "") == "text_delta":
+                        narration = _narration_delta(buffered, event.delta.text)
                         buffered += event.delta.text
-                        if not _is_xml(buffered):
-                            yield {"type": "thinking_delta", "text": event.delta.text}
+                        if narration:
+                            yield {"type": "thinking_delta", "text": narration}
                 result["message"] = await stream.get_final_message()
             return
         except anthropic.RateLimitError as e:
@@ -177,6 +188,8 @@ async def _run_anthropic(api_key, model_id, message):
         response = result["message"]
         tool_use_blocks = [b for b in response.content if b.type == "tool_use"]
         text = "".join(b.text for b in response.content if b.type == "text")
+        if text.strip():
+            final_text = text
 
         if not tool_use_blocks:
             final_text = text
@@ -271,9 +284,10 @@ async def _openai_round(base_url, api_key, model_id, messages, tools, result):
 
                             text = delta.get("content")
                             if text:
+                                narration = _narration_delta(buffered, text)
                                 buffered += text
-                                if not _is_xml(buffered):
-                                    yield {"type": "thinking_delta", "text": text}
+                                if narration:
+                                    yield {"type": "thinking_delta", "text": narration}
 
                             # Streamed tool calls arrive as fragments: the id and name land early,
                             # while `arguments` builds up across chunks and is only parseable once
@@ -330,9 +344,12 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
             }
             return
 
+        if (result.get("text") or "").strip():
+            final_text = result["text"]
+
         calls = result.get("tool_calls") or []
         if not calls:
-            final_text = result.get("text", "")
+            final_text = result.get("text", "") or final_text
             break
 
         messages.append({
@@ -454,9 +471,10 @@ async def _gemini_round(url, api_key, contents, tools, result):
                                 parts.append(part)
                                 text = part.get("text")
                                 if text:
+                                    narration = _narration_delta(buffered, text)
                                     buffered += text
-                                    if not _is_xml(buffered):
-                                        yield {"type": "thinking_delta", "text": text}
+                                    if narration:
+                                        yield {"type": "thinking_delta", "text": narration}
         except httpx.HTTPError as e:
             result["error"] = str(e)
             return
@@ -496,11 +514,14 @@ async def _run_gemini(api_key, model_id, message):
             }
             return
 
+        if (result.get("text") or "").strip():
+            final_text = result["text"]
+
         parts = result.get("parts") or []
         function_calls = [part["functionCall"] for part in parts if "functionCall" in part]
 
         if not function_calls:
-            final_text = result.get("text", "")
+            final_text = result.get("text", "") or final_text
             break
 
         contents.append({"role": "model", "parts": parts})
