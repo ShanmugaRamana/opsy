@@ -22,6 +22,7 @@ import httpx
 from routers.orchestrator.ratelimit import (
     MAX_RATE_LIMIT_RETRIES,
     MAX_TRANSIENT_RETRIES,
+    can_retry_rate_limit,
     is_rate_limited,
     is_transient_status,
     retry_delay,
@@ -244,11 +245,11 @@ async def _anthropic_round(client, model_id, messages, tools, result):
                 result["message"] = await stream.get_final_message()
             return
         except anthropic.RateLimitError as e:
-            if attempt >= MAX_RATE_LIMIT_RETRIES:
+            headers = getattr(getattr(e, "response", None), "headers", None)
+            if not can_retry_rate_limit(attempt, headers, str(e)):
                 result["error"] = str(e)
                 result["rate_limited"] = True
                 return
-            headers = getattr(getattr(e, "response", None), "headers", None)
             delay = retry_delay(headers, str(e), attempt)
             yield {"type": "rate_limited", "retry_in": delay, "attempt": attempt + 1}
             await wait_before_retry(delay, attempt)
@@ -391,7 +392,9 @@ async def _openai_round(base_url, api_key, model_id, messages, tools, result):
                 ) as response:
                     if response.status_code >= 400:
                         body = (await response.aread()).decode(errors="replace")
-                        if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+                        if is_rate_limited(response.status_code) and can_retry_rate_limit(
+                            attempt, response.headers, body
+                        ):
                             retry_after = retry_delay(response.headers, body, attempt)
                         elif (
                             is_transient_status(response.status_code)
@@ -626,7 +629,9 @@ async def _gemini_round(url, api_key, contents, tools, result):
                 ) as response:
                     if response.status_code >= 400:
                         body = (await response.aread()).decode(errors="replace")
-                        if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+                        if is_rate_limited(response.status_code) and can_retry_rate_limit(
+                            attempt, response.headers, body
+                        ):
                             retry_after = retry_delay(response.headers, body, attempt)
                         elif (
                             is_transient_status(response.status_code)

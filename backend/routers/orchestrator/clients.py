@@ -6,6 +6,7 @@ from routers.models.providers import is_local
 
 from .ratelimit import (
     MAX_RATE_LIMIT_RETRIES,
+    can_retry_rate_limit,
     is_rate_limited,
     retry_delay,
     space_calls,
@@ -36,9 +37,9 @@ async def _call_anthropic(api_key, model_id, system_prompt, message):
                 messages=[{"role": "user", "content": message}],
             )
         except anthropic.RateLimitError as e:
-            if attempt >= MAX_RATE_LIMIT_RETRIES:
-                raise ProviderCallError(str(e), rate_limited=True) from e
             headers = getattr(getattr(e, "response", None), "headers", None)
+            if not can_retry_rate_limit(attempt, headers, str(e)):
+                raise ProviderCallError(str(e), rate_limited=True) from e
             await wait_before_retry(retry_delay(headers, str(e), attempt), attempt)
             continue
         except anthropic.APIError as e:
@@ -67,7 +68,9 @@ async def _call_openai_compatible(base_url, api_key, model_id, system_prompt, me
                     base_url, headers={"Authorization": f"Bearer {api_key}"}, json=payload
                 )
 
-            if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+            if is_rate_limited(response.status_code) and can_retry_rate_limit(
+                attempt, response.headers, response.text
+            ):
                 await wait_before_retry(
                     retry_delay(response.headers, response.text, attempt), attempt
                 )
@@ -107,7 +110,9 @@ async def _call_gemini(api_key, model_id, system_prompt, message):
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
                 response = await client.post(url, params={"key": api_key}, json=payload)
 
-            if is_rate_limited(response.status_code) and attempt < MAX_RATE_LIMIT_RETRIES:
+            if is_rate_limited(response.status_code) and can_retry_rate_limit(
+                attempt, response.headers, response.text
+            ):
                 await wait_before_retry(
                     retry_delay(response.headers, response.text, attempt), attempt
                 )
