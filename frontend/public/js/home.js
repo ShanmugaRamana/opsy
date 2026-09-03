@@ -349,12 +349,18 @@ function startTraceRow(data) {
     const active = ensureTrace();
     const target = data.path ? `${data.label} (${data.path})` : data.label;
 
-    const row = document.createElement('div');
-    row.style.cssText = 'padding: 0.15rem 0; word-break: break-word;';
-    row.innerText = `Running ${target}`;
-    active.commands.appendChild(row);
+    const details = document.createElement('details');
+    details.open = false;
+    details.style.cssText = 'margin: 0.15rem 0; padding-left: 0.2rem;';
 
-    active.rows[traceRowKey(data)] = { row, target };
+    const summary = document.createElement('summary');
+    summary.style.cssText = 'cursor: pointer; padding: 0.15rem 0; word-break: break-word; font-weight: 500; opacity: 0.9;';
+    summary.innerText = `Running ${target}...`;
+    
+    details.appendChild(summary);
+    active.commands.appendChild(details);
+
+    active.rows[traceRowKey(data)] = { details, summary, target };
     active.count += 1;
     active.labels.push(target);
     setTraceHeader(`Running ${target}`);
@@ -367,12 +373,11 @@ function finishTraceRow(data) {
     if (!entry) return;
 
     const output = document.createElement('div');
-    output.style.cssText = 'white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin: 0.1rem 0 0.4rem 0.6rem;';
+    output.style.cssText = 'white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin: 0.2rem 0 0.4rem 1.2rem; padding-left: 0.4rem; border-left: 1px solid var(--border);';
     output.innerText = data.output;
 
-    entry.row.innerText = entry.target;
-    entry.row.style.fontWeight = '500';
-    entry.row.insertAdjacentElement('afterend', output);
+    entry.summary.innerText = entry.target;
+    entry.details.appendChild(output);
     setTraceHeader(`Checked ${entry.target}`);
     scrollChatToBottom();
 }
