@@ -15,6 +15,9 @@ logger = logging.getLogger("orchestrator.ratelimit")
 
 MIN_CALL_INTERVAL = float(os.getenv("PROVIDER_MIN_CALL_INTERVAL", "1.5"))
 MAX_RATE_LIMIT_RETRIES = int(os.getenv("PROVIDER_RATE_LIMIT_RETRIES", "3"))
+# Dropped connections, read timeouts and provider 5xx are worth retrying too, but they say nothing
+# about how long to wait, so they get plain exponential backoff on a smaller budget than a 429.
+MAX_TRANSIENT_RETRIES = int(os.getenv("PROVIDER_TRANSIENT_RETRIES", "2"))
 MAX_RETRY_WAIT = 60.0
 _RETRY_BUFFER = 0.5
 
@@ -60,6 +63,22 @@ def is_rate_limited(status_code=None, error_text=""):
         return True
     text = str(error_text or "").lower()
     return "429" in text or "rate limit" in text or "too many requests" in text
+
+
+def is_transient_status(status_code):
+    """A provider-side failure worth retrying: gateway and overload errors, but not 4xx, which
+    would fail identically on a retry."""
+    return status_code is not None and 500 <= status_code < 600
+
+
+def transient_delay(attempt):
+    """Backoff for failures that carry no retry-after guidance of their own."""
+    return min(2.0 ** attempt, MAX_RETRY_WAIT)
+
+
+async def wait_before_transient_retry(delay, attempt, reason):
+    logger.warning(f"transient provider failure ({reason}), waiting {delay:.1f}s before retry {attempt + 1}")
+    await asyncio.sleep(delay)
 
 
 async def wait_before_retry(delay, attempt):

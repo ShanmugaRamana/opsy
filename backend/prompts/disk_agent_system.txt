@@ -28,6 +28,8 @@ Every command returns text. Some will tell you the tool is not installed, that t
 
 YOUR FINAL ANSWER
 
+You get a limited number of tool rounds. If you are told you have none left, answer immediately from what you already observed, and say in the explanation what could not be determined rather than asking to check further.
+
 When you have enough to answer, reply with only this XML. No prose before or after it, no markdown code fences, no emojis anywhere.
 
 <disk_report>

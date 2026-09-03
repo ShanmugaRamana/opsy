@@ -14,11 +14,18 @@ _VALID_SEVERITIES = {"plenty", "moderate", "tight", "critical"}
 # whole reply to be XML.
 _REPORT_RE = re.compile(r"<disk_report\b.*?</disk_report>", re.DOTALL | re.IGNORECASE)
 _REPORT_OPEN_RE = re.compile(r"<disk_report\b.*", re.DOTALL | re.IGNORECASE)
-_ANY_TAG_RE = re.compile(r"<[^>]*>")
+# Only markup shaped like a real tag. A plain "<[^>]*>" cannot tell a tag from a comparison, and
+# disk answers are full of comparisons: "<1 GB free ... grew >90%" would lose the very figure the
+# user asked for. Requiring a letter after the opening bracket keeps those intact.
+_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9_.:-]*(?:\s[^<>]*)?/?>")
 # A bare "&" is not valid XML and is common in command output quoted back by the model.
 _BARE_AMP_RE = re.compile(r"&(?!#?\w+;)")
 
 NO_ANSWER_SUMMARY = "The model finished without returning a readable answer. Expanding the trace shows what was checked."
+
+# How much of a non-compliant reply to log. Enough to see what the model actually sent, capped so a
+# runaway reply does not flood the log.
+_LOG_EXCERPT_CHARS = 600
 
 
 def _extract_report(text):
@@ -35,12 +42,16 @@ def _extract_report(text):
     return None
 
 
-def _fallback(raw_text):
+def _fallback(raw_text, reason):
     """No parseable report: salvage whatever prose the model did produce rather than showing the
-    user an empty answer or a wall of half-XML."""
+    user an empty answer or a wall of half-XML.
+
+    Always flagged as salvaged, because the caller renders a degraded answer differently - a summary
+    that is really leftover narration is worth showing alongside the trace, not in place of it."""
+    logger.warning(f"{reason}; raw reply: {raw_text[:_LOG_EXCERPT_CHARS]!r}")
     prose = _REPORT_OPEN_RE.sub("", raw_text)
-    prose = _ANY_TAG_RE.sub("", prose).strip()
-    return DiskReport(summary=prose or NO_ANSWER_SUMMARY)
+    prose = _TAG_RE.sub("", prose).strip()
+    return DiskReport(summary=prose or NO_ANSWER_SUMMARY, salvaged=True)
 
 
 def _text(element):
@@ -115,20 +126,17 @@ def parse_disk_report(raw_text: str) -> DiskReport:
 
     block = _extract_report(cleaned)
     if block is None:
-        logger.warning("disk agent reply contained no <disk_report> block, salvaging prose")
-        return _fallback(cleaned)
+        return _fallback(cleaned, "disk agent reply contained no <disk_report> block")
 
     try:
         root = ET.fromstring(_BARE_AMP_RE.sub("&amp;", block))
     except ET.ParseError as e:
-        logger.warning(f"disk agent <disk_report> block was malformed ({e}), salvaging prose")
-        return _fallback(cleaned)
+        return _fallback(cleaned, f"disk agent <disk_report> block was malformed ({e})")
 
     # An answer with no summary but real content elsewhere is still worth showing.
     summary = _text(root.find("summary")) or _text(root.find("explanation"))
     if summary is None:
-        logger.warning("disk agent reply had no <summary>, salvaging prose")
-        return _fallback(cleaned)
+        return _fallback(cleaned, "disk agent reply had no <summary>")
 
     return DiskReport(
         summary=summary,

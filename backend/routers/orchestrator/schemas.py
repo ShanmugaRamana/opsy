@@ -38,6 +38,10 @@ class DiskReport(BaseModel):
     facts: list[Fact] = []
     top_consumers: list[TopConsumer] = []
     suggestion: str | None = None
+    # True when the model did not return a usable <disk_report> and the summary is prose recovered
+    # from whatever it did say. The client keeps the trace expanded for these, since the commands
+    # that ran are then more trustworthy than the answer.
+    salvaged: bool = False
 
 
 class OrchestratorResponse(BaseModel):

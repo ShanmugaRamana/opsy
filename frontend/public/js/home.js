@@ -319,7 +319,9 @@ function finishTraceRow(data) {
     setTraceHeader(`Checked ${entry.target}`);
 }
 
-function closeTrace() {
+// `keepOpen` is for a salvaged answer: when the model never returned a usable report, the commands
+// that actually ran are more trustworthy than the summary, so the work stays visible.
+function closeTrace(keepOpen) {
     if (!trace) return;
     const { count, labels } = trace;
     if (count === 0) {
@@ -329,7 +331,7 @@ function closeTrace() {
     } else {
         setTraceHeader(`How I checked this: ${count} commands, ending with ${labels[count - 1]}`);
     }
-    trace.details.open = false;
+    trace.details.open = Boolean(keepOpen);
     trace = null;
 }
 
@@ -384,6 +386,14 @@ function renderDiskReport(report) {
     if (!report) return;
 
     if (report.summary) appendMessage('assistant', report.summary);
+    // Say plainly when the answer is recovered prose rather than a real report, so a degraded
+    // answer is never mistaken for a confident one.
+    if (report.salvaged) {
+        appendBlock(
+            'The model did not return a structured report. This is the closest answer recovered from its reply — the trace above shows what was actually checked.',
+            'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.7; font-style: italic;',
+        );
+    }
     if (report.explanation) {
         appendBlock(report.explanation, 'font-size: 0.82rem; line-height: 1.5; padding: 0 0.9rem; opacity: 0.9;');
     }
@@ -463,26 +473,38 @@ function handleOrchestratorEvent(rawEvent) {
             countdownRetry(row, data.retry_in);
             break;
         }
+        case 'retrying': {
+            const active = ensureTrace();
+            active.details.open = true;
+            const row = document.createElement('div');
+            row.style.cssText = 'padding: 0.15rem 0; color: #e67e22;';
+            row.innerText = `Provider connection failed, retrying (attempt ${data.attempt})`;
+            active.commands.appendChild(row);
+            setTraceHeader('Retrying after a connection failure');
+            break;
+        }
         case 'tool_call':
             startTraceRow(data);
             break;
         case 'tool_result':
             finishTraceRow(data);
             break;
-        case 'final':
+        case 'final': {
             // The general path doesn't stream, so its thinking arrives whole; keep it in the panel.
             if (data.thinking && trace && !trace.thinking.innerText) {
                 trace.thinking.innerText = data.thinking;
             }
-            closeTrace();
+            const salvaged = Boolean(data.disk_report && data.disk_report.salvaged);
+            closeTrace(salvaged);
             if (data.mode === 'disk') {
                 renderDiskReport(data.disk_report);
             } else {
                 appendMessage('assistant', data.content);
             }
             break;
+        }
         case 'error':
-            closeTrace();
+            closeTrace(true);
             appendMessage('error', friendlyError(data.detail));
             break;
     }

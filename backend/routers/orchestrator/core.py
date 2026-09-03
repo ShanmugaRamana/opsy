@@ -32,7 +32,11 @@ def _get_key_sync(provider):
 
 async def _relay_disk_agent(provider, api_key, model_id, message):
     """Calls the disk agent over its real WS route (loopback) rather than importing and calling it
-    directly, relaying every event it streams back unchanged."""
+    directly, relaying every event it streams back unchanged.
+
+    A socket that closes mid-turn would otherwise end the relay silently, leaving the client with a
+    collapsed trace and no answer, so a close without a terminal event becomes an error."""
+    saw_terminal = False
     try:
         async with websockets.connect(f"{INTERNAL_WS_BASE}/linux/agents/disk/ws") as ws:
             await ws.send(json.dumps({
@@ -42,10 +46,19 @@ async def _relay_disk_agent(provider, api_key, model_id, message):
                 "message": message,
             }))
             async for raw in ws:
-                yield json.loads(raw)
+                event = json.loads(raw)
+                if event.get("type") in ("final", "error"):
+                    saw_terminal = True
+                yield event
     except (OSError, websockets.exceptions.WebSocketException) as e:
         logger.error(f"disk agent route unreachable: {e}")
-        yield {"type": "error", "status": 502, "detail": f"disk agent unreachable: {e}"}
+        if not saw_terminal:
+            yield {"type": "error", "status": 502, "detail": f"disk agent unreachable: {e}"}
+        return
+
+    if not saw_terminal:
+        logger.error("disk agent socket closed without a terminal event")
+        yield {"type": "error", "status": 502, "detail": "disk agent closed without returning a result"}
 
 
 async def run_orchestrator(request: OrchestratorRequest):
