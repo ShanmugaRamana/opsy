@@ -347,10 +347,15 @@ function traceRowKey(data) {
 
 function startTraceRow(data) {
     const active = ensureTrace();
+    
+    // Close any previously open command details in this trace
+    const openDetails = active.commands.querySelectorAll('details[open]');
+    openDetails.forEach(d => d.open = false);
+
     const target = data.path ? `${data.label} (${data.path})` : data.label;
 
     const details = document.createElement('details');
-    details.open = false;
+    details.open = true;
     details.style.cssText = 'margin: 0.15rem 0; padding-left: 0.2rem;';
 
     const summary = document.createElement('summary');
@@ -389,6 +394,11 @@ function closeTrace(keepOpen) {
     stopRetryCycling();
     trace.logo.style.animation = 'none';
     trace.logo.style.opacity = '0.5';
+    
+    // Close any remaining open command details
+    const openDetails = trace.commands.querySelectorAll('details[open]');
+    openDetails.forEach(d => d.open = false);
+
     const { count, labels } = trace;
     if (count === 0) {
         setTraceHeader('How I checked this: reasoning only, no commands run');
