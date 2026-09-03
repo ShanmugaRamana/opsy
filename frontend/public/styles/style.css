@@ -358,7 +358,7 @@ body {
 .main-content.is-chatting .chat-scroll-area {
     flex-grow: 1;
     margin-top: 0;
-    padding-top: 1rem;
+    padding-top: 4rem;
     padding-bottom: 2rem;
 }
 
