@@ -16,6 +16,7 @@ from routers.sessions.queries import create_session, get_session, insert_chat, r
 from .agents.router import AGENT_WS_PATHS
 from .classify import classify_intent
 from .clients import ProviderCallError, call_provider
+from .memory.short_term.client import fetch_short_term
 from .prompts import BASE_SYSTEM_PROMPT, SESSION_TITLE_SYSTEM_PROMPT
 from .schemas import OrchestratorRequest
 from .turn_state import clear_running_turn, get_running_turn, set_running_turn
@@ -106,12 +107,17 @@ async def _generate_title(provider, api_key, model_id, message, base_url=None):
     return title[:80] or None
 
 
-async def _relay_agent(mode, provider, api_key, model_id, message, base_url=None):
+async def _relay_agent(mode, provider, api_key, model_id, message, base_url=None, history=None):
     """Calls a specialist agent over its real WS route (loopback) rather than importing and calling
     it directly, relaying every event it streams back unchanged.
 
     A socket that closes mid-turn would otherwise end the relay silently, leaving the client with a
-    collapsed trace and no answer, so a close without a terminal event becomes an error."""
+    collapsed trace and no answer, so a close without a terminal event becomes an error.
+
+    The memory window is resolved here and handed over in the payload rather than being fetched again
+    by the agent, following what already happens with `api_key` and `base_url`: the orchestrator
+    resolves what a turn needs and passes the resolved values down. The agent still defaults it to an
+    empty list, so its route stays directly callable without memory."""
     ws_path = AGENT_WS_PATHS[mode]
     saw_terminal = False
     try:
@@ -122,6 +128,7 @@ async def _relay_agent(mode, provider, api_key, model_id, message, base_url=None
                 "model_id": model_id,
                 "message": message,
                 "base_url": base_url,
+                "history": history or [],
             }))
             async for raw in ws:
                 event = json.loads(raw)
@@ -192,6 +199,12 @@ async def run_orchestrator(request: OrchestratorRequest):
         session_id = request.session_id
         session_name = await anyio.to_thread.run_sync(_get_session_name_sync, session_id)
 
+    # Read the session's memory before logging this message, so the turn being answered is not part
+    # of its own context. (The memory route drops an unanswered user row anyway, so the window would
+    # be the same either way - this ordering just makes the intent explicit.) A brand new session has
+    # nothing to remember and skips the call entirely.
+    history = [] if is_new_session else await fetch_short_term(session_id)
+
     await anyio.to_thread.run_sync(_insert_chat_sync, session_id, "user", request.message)
 
     # No early `return` from here on, deliberately: every exit needs to fall through to the
@@ -222,7 +235,8 @@ async def run_orchestrator(request: OrchestratorRequest):
             mode = None
             try:
                 mode = await classify_intent(
-                    request.provider, api_key, request.model_id, request.message, base_url=base_url
+                    request.provider, api_key, request.model_id, request.message,
+                    base_url=base_url, history=history,
                 )
             except ProviderCallError as e:
                 logger.error(f"classification failed: {e}")
@@ -237,7 +251,8 @@ async def run_orchestrator(request: OrchestratorRequest):
 
                 if mode in AGENT_WS_PATHS:
                     async for event in _relay_agent(
-                        mode, request.provider, api_key, request.model_id, request.message, base_url=base_url
+                        mode, request.provider, api_key, request.model_id, request.message,
+                        base_url=base_url, history=history,
                     ):
                         if event["type"] == "error":
                             event.setdefault("status", 502)
@@ -249,7 +264,7 @@ async def run_orchestrator(request: OrchestratorRequest):
                     try:
                         raw_text = await call_provider(
                             request.provider, api_key, request.model_id, BASE_SYSTEM_PROMPT, request.message,
-                            base_url=base_url,
+                            base_url=base_url, history=history,
                         )
                     except ProviderCallError as e:
                         logger.error(f"{request.provider} call failed: {e}")

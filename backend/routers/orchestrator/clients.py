@@ -4,6 +4,7 @@ import httpx
 from routers.models.local.environment import LOCAL_CONTEXT_LENGTH, LOCAL_TIMEOUT
 from routers.models.providers import is_local
 
+from .memory.short_term.render import as_anthropic, as_gemini, as_openai
 from .ratelimit import (
     MAX_RATE_LIMIT_RETRIES,
     can_retry_rate_limit,
@@ -25,8 +26,9 @@ class ProviderCallError(Exception):
         self.rate_limited = rate_limited
 
 
-async def _call_anthropic(api_key, model_id, system_prompt, message):
+async def _call_anthropic(api_key, model_id, system_prompt, message, history=None):
     client = anthropic.AsyncAnthropic(api_key=api_key)
+    messages = as_anthropic(history) + [{"role": "user", "content": message}]
 
     for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
         await space_calls()
@@ -35,7 +37,7 @@ async def _call_anthropic(api_key, model_id, system_prompt, message):
                 model=model_id,
                 max_tokens=16000,
                 system=system_prompt,
-                messages=[{"role": "user", "content": message}],
+                messages=messages,
             )
         except anthropic.RateLimitError as e:
             headers = getattr(getattr(e, "response", None), "headers", None)
@@ -53,11 +55,12 @@ async def _call_anthropic(api_key, model_id, system_prompt, message):
         raise ProviderCallError("anthropic response had no text block")
 
 
-async def _call_openai_compatible(base_url, api_key, model_id, system_prompt, message):
+async def _call_openai_compatible(base_url, api_key, model_id, system_prompt, message, history=None):
     payload = {
         "model": model_id,
         "messages": [
             {"role": "system", "content": system_prompt},
+            *as_openai(history),
             {"role": "user", "content": message},
         ],
     }
@@ -88,22 +91,24 @@ async def _call_openai_compatible(base_url, api_key, model_id, system_prompt, me
             raise ProviderCallError(str(e)) from e
 
 
-async def _call_openai(api_key, model_id, system_prompt, message):
+async def _call_openai(api_key, model_id, system_prompt, message, history=None):
     return await _call_openai_compatible(
-        "https://api.openai.com/v1/chat/completions", api_key, model_id, system_prompt, message
+        "https://api.openai.com/v1/chat/completions", api_key, model_id, system_prompt, message,
+        history=history,
     )
 
 
-async def _call_groq(api_key, model_id, system_prompt, message):
+async def _call_groq(api_key, model_id, system_prompt, message, history=None):
     return await _call_openai_compatible(
-        "https://api.groq.com/openai/v1/chat/completions", api_key, model_id, system_prompt, message
+        "https://api.groq.com/openai/v1/chat/completions", api_key, model_id, system_prompt, message,
+        history=history,
     )
 
 
-async def _call_gemini(api_key, model_id, system_prompt, message):
+async def _call_gemini(api_key, model_id, system_prompt, message, history=None):
     payload = {
         "system_instruction": {"parts": [{"text": system_prompt}]},
-        "contents": [{"role": "user", "parts": [{"text": message}]}],
+        "contents": [*as_gemini(history), {"role": "user", "parts": [{"text": message}]}],
     }
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:generateContent"
 
@@ -131,7 +136,7 @@ async def _call_gemini(api_key, model_id, system_prompt, message):
             raise ProviderCallError(str(e)) from e
 
 
-async def _call_ollama(base_url, model_id, system_prompt, message):
+async def _call_ollama(base_url, model_id, system_prompt, message, history=None):
     """Ollama's native /api/chat, not its OpenAI-compatible /v1/chat/completions - that compat layer
     silently drops tool calls when streaming, so the agents rely on this same native endpoint for
     their tool loops (see agents/shared.py:ollama_round). This non-streaming call is only for
@@ -141,6 +146,7 @@ async def _call_ollama(base_url, model_id, system_prompt, message):
         "model": model_id,
         "messages": [
             {"role": "system", "content": system_prompt},
+            *as_openai(history),
             {"role": "user", "content": message},
         ],
         "stream": False,
@@ -164,15 +170,18 @@ _CLIENTS = {
 }
 
 
-async def call_provider(provider, api_key, model_id, system_prompt, message, base_url=None):
+async def call_provider(provider, api_key, model_id, system_prompt, message, base_url=None, history=None):
+    """`history` is the session's memory window in its neutral form; each client renders it into its
+    own dialect. Left out (or empty) the payload is byte-for-byte what it was before memory existed,
+    which is what keeps the session-title call - a call with nothing to remember - unchanged."""
     # Local providers have no quota to respect and no key to send - they skip the cloud dispatch table
     # entirely rather than being shoehorned into the (api_key, model_id, ...) signature it expects.
     if is_local(provider):
         if provider == "ollama":
-            return await _call_ollama(base_url, model_id, system_prompt, message)
+            return await _call_ollama(base_url, model_id, system_prompt, message, history=history)
         raise ProviderCallError(f"unknown local provider: {provider}")
 
     client = _CLIENTS.get(provider)
     if client is None:
         raise ProviderCallError(f"unknown provider: {provider}")
-    return await client(api_key, model_id, system_prompt, message)
+    return await client(api_key, model_id, system_prompt, message, history=history)

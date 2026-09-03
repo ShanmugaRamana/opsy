@@ -4,6 +4,8 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field, ValidationError
 
+from routers.orchestrator.memory.short_term.schemas import HistoryTurn
+
 from .tool_clients import run_disk_agent
 
 logger = logging.getLogger("orchestrator.disk")
@@ -27,6 +29,9 @@ class DiskAgentRequest(BaseModel):
     model_id: str
     message: str = Field(min_length=1)
     base_url: Optional[str] = None
+    # The session's memory window, resolved by the orchestrator and passed down the same way api_key
+    # and base_url are. Defaulted so this route stays directly callable without memory.
+    history: list[HistoryTurn] = []
 
 
 @router.get("/")
@@ -51,7 +56,8 @@ async def disk_agent_ws(websocket: WebSocket):
             return
 
         async for event in run_disk_agent(
-            request.provider, request.api_key, request.model_id, request.message, base_url=request.base_url
+            request.provider, request.api_key, request.model_id, request.message,
+            base_url=request.base_url, history=request.history,
         ):
             await websocket.send_json(event)
     except WebSocketDisconnect:

@@ -47,3 +47,5 @@ When a message could fit more than one category, decide by what is being asked a
 - a firewall as a running service -> "process". a firewall as rules about what is allowed through -> "network".
 
 Otherwise use "general".
+
+The message may be preceded by a short record of the conversation so far, under "Earlier in this conversation". That is context only, so that a follow-up which names nothing on its own — "and what about /var?", "which of those can I delete?", "is that normal?" — can be classified by what it refers back to. Classify only the message under "Classify this new message", never anything in the record, and reply with exactly one word as above.

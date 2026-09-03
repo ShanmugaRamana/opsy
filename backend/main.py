@@ -11,6 +11,8 @@ from routers.orchestrator.agents.disk.router import router as disk_agent_router
 from routers.orchestrator.agents.network.router import router as network_agent_router
 from routers.orchestrator.agents.process.router import router as process_agent_router
 from routers.orchestrator.agents.router import router as agents_catalog_router
+from routers.orchestrator.memory.router import router as memory_catalog_router
+from routers.orchestrator.memory.short_term.router import router as short_term_memory_router
 from routers.orchestrator.tools.command.router import router as command_tools_router
 from routers.orchestrator.tools.disk.router import router as disk_tools_router
 from routers.orchestrator.tools.network.router import router as network_tools_router
@@ -54,6 +56,11 @@ app.include_router(disk_tools_router)
 app.include_router(process_tools_router)
 app.include_router(network_tools_router)
 app.include_router(command_tools_router)
+
+# Category: memory (routers/orchestrator/memory/) — GET /linux/memory/ catalogs every memory kind;
+# each kind's own router (e.g. /linux/memory/short-term/{session_id}) is mounted alongside it.
+app.include_router(memory_catalog_router)
+app.include_router(short_term_memory_router)
 
 
 @app.on_event("startup")

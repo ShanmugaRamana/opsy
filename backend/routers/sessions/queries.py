@@ -21,9 +21,18 @@ CREATE TABLE IF NOT EXISTS chats (
 """
 
 
+# Short-term memory reads the newest few rows of one session on every single turn (see
+# routers/orchestrator/memory/short_term/). Without this index that read is a full scan of `chats`,
+# which grows without bound - the one query in this file whose cost is not bounded by the session.
+CREATE_CHATS_INDEX_SQL = """
+CREATE INDEX IF NOT EXISTS chats_session_id_chat_id_idx ON chats (session_id, chat_id DESC)
+"""
+
+
 def _ensure_tables(cur):
     cur.execute(CREATE_SESSIONS_TABLE_SQL)
     cur.execute(CREATE_CHATS_TABLE_SQL)
+    cur.execute(CREATE_CHATS_INDEX_SQL)
 
 
 def create_session(conn, name):
@@ -109,5 +118,26 @@ def list_chats(conn, session_id):
             "SELECT chat_id, session_id, role, chat, created_at FROM chats "
             "WHERE session_id = %s ORDER BY created_at ASC, chat_id ASC",
             (session_id,),
+        )
+        return cur.fetchall()
+
+
+def list_recent_chats(conn, session_id, limit):
+    """The newest `limit` rows of a session, newest first - the bounded read short-term memory is
+    built on, as opposed to list_chats, which returns the whole session for replay into the UI.
+
+    Ordered by chat_id rather than created_at: created_at is now() at insert, so the two rows of a
+    single turn can share a timestamp and order ambiguously. chat_id is the serial insertion order
+    and cannot."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.chats')")
+        if cur.fetchone()[0] is None:
+            return []
+
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            "SELECT chat_id, session_id, role, chat, created_at FROM chats "
+            "WHERE session_id = %s ORDER BY chat_id DESC LIMIT %s",
+            (session_id, limit),
         )
         return cur.fetchall()

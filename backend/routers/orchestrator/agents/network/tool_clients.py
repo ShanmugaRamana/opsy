@@ -34,6 +34,7 @@ from routers.orchestrator.ratelimit import (
 )
 from routers.orchestrator.agents import shared
 from routers.orchestrator.agents.shared import COMMAND_TOOL_NAME
+from routers.orchestrator.memory.short_term.render import as_anthropic, as_gemini, as_openai
 from routers.orchestrator.schemas import CommandRun
 from routers.orchestrator.tools.network.tool import (
     NETWORK_COMMANDS,
@@ -272,10 +273,10 @@ async def _anthropic_round(client, model_id, messages, tools, result):
     result.setdefault("error", "provider retries exhausted without a response")
 
 
-async def _run_anthropic(api_key, model_id, message, base_url=None):
+async def _run_anthropic(api_key, model_id, message, base_url=None, history=None):
     client = anthropic.AsyncAnthropic(api_key=api_key)
     tools = _anthropic_tool_schema()
-    messages = [{"role": "user", "content": message}]
+    messages = as_anthropic(history) + [{"role": "user", "content": message}]
     commands_run = []
     narration = ""
     final_text = ""
@@ -479,10 +480,11 @@ async def _openai_round(base_url, api_key, model_id, messages, tools, result):
     result.setdefault("error", "provider retries exhausted without a response")
 
 
-async def _run_openai_compatible(base_url, api_key, model_id, message):
+async def _run_openai_compatible(base_url, api_key, model_id, message, history=None):
     tools = _openai_tool_schema()
     messages = [
         {"role": "system", "content": NETWORK_AGENT_SYSTEM_PROMPT},
+        *as_openai(history),
         {"role": "user", "content": message},
     ]
     commands_run = []
@@ -568,16 +570,18 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
     yield _final_event(parse_network_report(final_text), narration, commands_run)
 
 
-async def _run_openai(api_key, model_id, message, base_url=None):
+async def _run_openai(api_key, model_id, message, base_url=None, history=None):
     async for event in _run_openai_compatible(
-        "https://api.openai.com/v1/chat/completions", api_key, model_id, message
+        "https://api.openai.com/v1/chat/completions", api_key, model_id, message,
+        history=history,
     ):
         yield event
 
 
-async def _run_groq(api_key, model_id, message, base_url=None):
+async def _run_groq(api_key, model_id, message, base_url=None, history=None):
     async for event in _run_openai_compatible(
-        "https://api.groq.com/openai/v1/chat/completions", api_key, model_id, message
+        "https://api.groq.com/openai/v1/chat/completions", api_key, model_id, message,
+        history=history,
     ):
         yield event
 
@@ -704,10 +708,10 @@ async def _gemini_round(url, api_key, contents, tools, result):
     result.setdefault("error", "provider retries exhausted without a response")
 
 
-async def _run_gemini(api_key, model_id, message, base_url=None):
+async def _run_gemini(api_key, model_id, message, base_url=None, history=None):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_id}:streamGenerateContent"
     tools = _gemini_tool_schema()
-    contents = [{"role": "user", "parts": [{"text": message}]}]
+    contents = as_gemini(history) + [{"role": "user", "parts": [{"text": message}]}]
     commands_run = []
     narration = ""
     final_text = ""
@@ -816,10 +820,11 @@ def _ollama_tool_schema():
     ]
 
 
-async def _run_ollama(api_key, model_id, message, base_url=None):
+async def _run_ollama(api_key, model_id, message, base_url=None, history=None):
     tools = _ollama_tool_schema()
     messages = [
         {"role": "system", "content": NETWORK_AGENT_SYSTEM_PROMPT},
+        *as_openai(history),
         {"role": "user", "content": message},
     ]
     commands_run = []
@@ -947,12 +952,15 @@ _AGENTS = {
 }
 
 
-async def run_network_agent(provider, api_key, model_id, message, base_url=None):
+async def run_network_agent(provider, api_key, model_id, message, base_url=None, history=None):
     """Streams the agent's events, guaranteeing the stream ends with exactly one terminal event.
 
     The client collapses its trace panel when the turn ends, so a run that stops without a "final"
     or "error" leaves the user staring at a finished-looking panel and no answer. Every exit path
     therefore produces one."""
+    # `history` is the session's short-term memory window, resolved by the orchestrator and
+    # rendered into each provider's own dialect by the loop that receives it. Absent, this
+    # agent behaves exactly as it did before memory existed.
     agent = _AGENTS.get(provider)
     if agent is None:
         yield {"type": "error", "status": 400, "detail": f"unknown provider: {provider}"}
@@ -960,7 +968,7 @@ async def run_network_agent(provider, api_key, model_id, message, base_url=None)
 
     saw_terminal = False
     try:
-        async for event in agent(api_key, model_id, message, base_url=base_url):
+        async for event in agent(api_key, model_id, message, base_url=base_url, history=history):
             if event["type"] in ("final", "error"):
                 saw_terminal = True
             yield event
