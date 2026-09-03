@@ -61,6 +61,9 @@ ARG_DESCRIPTION = (
 MAX_TOOL_ROUNDS = 4
 # Nudges do not consume a tool round, so they need their own ceiling to bound the turn.
 MAX_NUDGES = 2
+# Ollama-only: how many times a round where every tool call used an invalid command id gets
+# corrected for free (no round spent) before it starts costing a real tool round. See _run_ollama.
+MAX_INVALID_TOOL_RETRIES = 2
 MAX_TOOL_RETRIES = 2
 MAX_TOKENS = 16000
 _HTTP_TIMEOUT = 120.0
@@ -812,6 +815,7 @@ async def _run_ollama(api_key, model_id, message, base_url=None):
     narration = ""
     final_text = ""
     nudges = 0
+    invalid_retries = 0
     round_index = 0
 
     while round_index <= MAX_TOOL_ROUNDS:
@@ -856,21 +860,60 @@ async def _run_ollama(api_key, model_id, message, base_url=None):
         # Ollama's tool_calls carry arguments as a JSON object, not a string fragment, and pairs a
         # tool result to its call by name rather than by an id (it doesn't emit one) - both are real
         # differences from the OpenAI dialect, not just cosmetic ones.
-        messages.append({
-            "role": "assistant",
-            "content": result.get("text") or "",
-            "tool_calls": [
-                {"function": {"name": call["name"], "arguments": json.loads(call["arguments"] or "{}")}}
-                for call in calls
-            ],
-        })
-
+        parsed_calls = []
         for call in calls:
             try:
                 args = json.loads(call["arguments"] or "{}")
             except json.JSONDecodeError:
                 args = {}
+            parsed_calls.append((call, args))
 
+        # Ollama does not grammar-constrain tool arguments the way a schema-enforced API would, so a
+        # weaker model can send a `command` that was never in the enum - typically a raw shell string
+        # like "nc -z host port" instead of "connectivity_check". Dispatching that always fails, so
+        # when EVERY call in the round is unresolvable it is corrected here without spending a tool
+        # round (the same no-cost-retry idea the nudge above uses), capped so a model that never
+        # recovers still reaches the final forced round on schedule instead of looping forever on
+        # empty rounds.
+        invalid_calls = [
+            (call, args) for call, args in parsed_calls
+            if call["name"] == TOOL_NAME and args.get("command") not in NETWORK_COMMANDS
+        ]
+
+        if (
+            invalid_calls
+            and len(invalid_calls) == len(parsed_calls)
+            and not final_round
+            and invalid_retries < MAX_INVALID_TOOL_RETRIES
+        ):
+            invalid_retries += 1
+            messages.append({
+                "role": "assistant",
+                "content": result.get("text") or "",
+                "tool_calls": [
+                    {"function": {"name": call["name"], "arguments": args}} for call, args in parsed_calls
+                ],
+            })
+            for call, args in parsed_calls:
+                bad = args.get("command")
+                correction = (
+                    f"'{bad}' is not a valid command id - there is no shell here, so a raw command "
+                    f"like 'nc -z host port' cannot be passed directly. Pick exactly one id from this "
+                    f"list: {', '.join(NETWORK_COMMANDS)}. If none of them answer the question, call "
+                    f"{COMMAND_TOOL_NAME} instead, with the command as an argv list."
+                )
+                messages.append({"role": "tool", "content": correction, "name": call["name"]})
+            continue
+
+        messages.append({
+            "role": "assistant",
+            "content": result.get("text") or "",
+            "tool_calls": [
+                {"function": {"name": call["name"], "arguments": args}} for call, args in parsed_calls
+            ],
+        })
+
+        for call, args in parsed_calls:
             output = None
             async for event in _dispatch_tool(call["name"], args):
                 if event["type"] == "tool_result":

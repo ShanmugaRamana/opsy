@@ -62,6 +62,18 @@ def _mark_failed_sync(model_key, error):
         conn.close()
 
 
+async def _try_mark_failed(model_key, error):
+    """Best-effort: persisting the failure must never be able to stop the caller from reaching
+    download_state.finish_error(), which is what actually reaches the WS client. `_mark_failed_sync`
+    already guards its own commit, but `get_connection()` inside it can still raise (e.g. the DB is
+    the reason this download failed in the first place), and an unguarded raise here would do the
+    same silent-death-of-a-background-task thing this whole function exists to prevent."""
+    try:
+        await anyio.to_thread.run_sync(_mark_failed_sync, model_key, error)
+    except Exception:
+        logger.exception(f"local-models - could not persist failure for {model_key}")
+
+
 async def run_download(model_key):
     """The background task body. Every exit path calls exactly one of download_state.finish_done /
     finish_error, mirroring the terminal-event guarantee the agent sockets already rely on."""
@@ -72,7 +84,12 @@ async def run_download(model_key):
     tag = entry["tag"]
     display_name = entry["display_name"]
 
-    await anyio.to_thread.run_sync(_start_download_row_sync, model_key)
+    # download_state must exist before anything else in this task can fail - including the very
+    # first DB write - or a failure here has no download_state record to report itself against. A WS
+    # client that connects while that record is missing gets "No download in progress" and, per
+    # download.js, redirects straight back to /setup: exactly the "the download page doesn't open"
+    # symptom, and silently, since this is a background asyncio task with no request/response cycle
+    # to surface an unhandled exception through.
     cancel_event = download_state.begin(model_key, tag, display_name)
 
     digest_totals = {}
@@ -81,6 +98,8 @@ async def run_download(model_key):
     time_at_last_tick = time.monotonic()
 
     try:
+        await anyio.to_thread.run_sync(_start_download_row_sync, model_key)
+
         logger.info(f"local-models - pulling {tag}")
         async with httpx.AsyncClient(timeout=_PULL_TIMEOUT) as client:
             async with client.stream(
@@ -148,10 +167,10 @@ async def run_download(model_key):
 
     except _Cancelled:
         logger.info(f"local-models - {tag} download cancelled")
-        await anyio.to_thread.run_sync(_mark_failed_sync, model_key, "cancelled")
+        await _try_mark_failed(model_key, "cancelled")
         download_state.finish_error("Download cancelled.")
 
     except Exception as e:
         logger.error(f"local-models - {tag} failed: {e}")
-        await anyio.to_thread.run_sync(_mark_failed_sync, model_key, str(e))
+        await _try_mark_failed(model_key, str(e))
         download_state.finish_error(str(e))
