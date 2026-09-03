@@ -272,8 +272,17 @@ function startTrace() {
     details.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.72rem; color: var(--text-secondary, #888); border-left: 2px solid var(--border); padding-left: 0.6rem; margin: 0.25rem 0;';
 
     const summary = document.createElement('summary');
-    summary.style.cssText = 'cursor: pointer; list-style: none; font-weight: 500;';
-    summary.innerText = 'Starting';
+    summary.style.cssText = 'cursor: pointer; list-style: none; font-weight: 500; display: flex; align-items: center; gap: 0.4rem;';
+
+    const logo = document.createElement('img');
+    logo.src = '/assets/images/logo.png';
+    logo.style.cssText = 'width: 14px; height: 14px; object-fit: contain; animation: pulse 1.5s infinite; opacity: 0.8;';
+    summary.appendChild(logo);
+
+    const textSpan = document.createElement('span');
+    textSpan.innerText = 'Starting';
+    summary.appendChild(textSpan);
+    
     details.appendChild(summary);
 
     const thinking = document.createElement('div');
@@ -284,7 +293,7 @@ function startTrace() {
     details.appendChild(commands);
 
     chatLog.appendChild(details);
-    trace = { details, summary, thinking, commands, rows: {}, count: 0, labels: [] };
+    trace = { details, summary, textSpan, logo, thinking, commands, rows: {}, count: 0, labels: [] };
     return trace;
 }
 
@@ -292,10 +301,37 @@ function ensureTrace() {
     return trace || startTrace();
 }
 
+let retryCycleInterval = null;
+const retryWords = ["Thinking...", "Analyzing...", "Holding on...", "Working..."];
+let retryWordIndex = 0;
+
+function startRetryCycling() {
+    const active = ensureTrace();
+    if (retryCycleInterval) return;
+    
+    const updateWord = () => {
+        if (!trace) return;
+        trace.textSpan.innerText = retryWords[retryWordIndex];
+        retryWordIndex = (retryWordIndex + 1) % retryWords.length;
+    };
+    
+    updateWord();
+    retryCycleInterval = setInterval(updateWord, 3000);
+}
+
+function stopRetryCycling() {
+    if (retryCycleInterval) {
+        clearInterval(retryCycleInterval);
+        retryCycleInterval = null;
+    }
+}
+
 // The header is never a fixed string: it names whatever is happening right now, then settles into a
 // summary of what was actually run.
 function setTraceHeader(text) {
-    ensureTrace().summary.innerText = text;
+    stopRetryCycling();
+    const active = ensureTrace();
+    active.textSpan.innerText = text;
 }
 
 function appendThinkingDelta(text) {
@@ -345,6 +381,9 @@ function finishTraceRow(data) {
 // that actually ran are more trustworthy than the summary, so the work stays visible.
 function closeTrace(keepOpen) {
     if (!trace) return;
+    stopRetryCycling();
+    trace.logo.style.animation = 'none';
+    trace.logo.style.opacity = '0.5';
     const { count, labels } = trace;
     if (count === 0) {
         setTraceHeader('How I checked this: reasoning only, no commands run');
@@ -380,20 +419,7 @@ function friendlyError(detail) {
     return text.length > 300 ? `${text.slice(0, 300)}...` : text;
 }
 
-function countdownRetry(row, seconds) {
-    let remaining = Math.ceil(seconds);
-    const tick = () => {
-        if (remaining <= 0) {
-            row.innerText = 'Retrying now';
-            return;
-        }
-        row.innerText = `Rate limited by the provider, retrying in ${remaining}s`;
-        setTraceHeader(`Rate limited, retrying in ${remaining}s`);
-        remaining -= 1;
-        setTimeout(tick, 1000);
-    };
-    tick();
-}
+
 
 function appendBlock(text, styles) {
     chatLog.style.display = 'flex';
@@ -488,23 +514,11 @@ function handleOrchestratorEvent(rawEvent) {
         case 'thinking_delta':
             appendThinkingDelta(data.text);
             break;
-        case 'rate_limited': {
-            const active = ensureTrace();
-            active.details.open = true;
-            const row = document.createElement('div');
-            row.style.cssText = 'padding: 0.15rem 0; color: #e67e22;';
-            active.commands.appendChild(row);
-            countdownRetry(row, data.retry_in);
-            break;
-        }
+        case 'rate_limited':
         case 'retrying': {
             const active = ensureTrace();
             active.details.open = true;
-            const row = document.createElement('div');
-            row.style.cssText = 'padding: 0.15rem 0; color: #e67e22;';
-            row.innerText = `Provider connection failed, retrying (attempt ${data.attempt})`;
-            active.commands.appendChild(row);
-            setTraceHeader('Retrying after a connection failure');
+            startRetryCycling();
             break;
         }
         case 'tool_call':
