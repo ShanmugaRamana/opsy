@@ -402,6 +402,10 @@ let orchestratorSocket = null;
 
 const SEVERITY_COLORS = { plenty: '#2ecc71', moderate: '#f1c40f', tight: '#e67e22', critical: '#e74c3c' };
 const LOAD_SEVERITY_COLORS = { idle: '#2ecc71', normal: '#2ecc71', busy: '#e67e22', overloaded: '#e74c3c' };
+const NETWORK_SEVERITY_COLORS = { online: '#2ecc71', degraded: '#e67e22', offline: '#e74c3c' };
+// The ladder marks a position in a chain rather than a quantity, so its rungs get their own three
+// states instead of the severity scale the disk and process bars use.
+const RUNG_COLORS = { ok: '#2ecc71', fail: '#e74c3c', unknown: '#888' };
 
 // The live trace for the turn in flight: a panel that exists from the first event, updates its own
 // header as work happens, and collapses once the answer lands.
@@ -906,9 +910,220 @@ function renderProcessReport(report) {
     }
 }
 
+// The five rungs, in the order they are walked. A failure at one implies nothing about the ones
+// above it, which is exactly why the chain is rendered instead of a single online/offline verdict.
+const LADDER_RUNGS = [
+    ['link', 'Link'],
+    ['address', 'Address'],
+    ['gateway', 'Gateway'],
+    ['dns', 'DNS'],
+    ['internet', 'Internet'],
+];
+
+function renderConnectivityLadder(connectivity) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.5rem 0.9rem;';
+
+    LADDER_RUNGS.forEach(([key, label], index) => {
+        const status = connectivity[key] || 'unknown';
+        const failed = connectivity.failed_at === key;
+
+        const rung = document.createElement('div');
+        const color = RUNG_COLORS[status] || RUNG_COLORS.unknown;
+        // The failing rung is the answer, so it carries the only filled background in the row.
+        rung.style.cssText = [
+            'display: flex; align-items: center; gap: 0.3rem;',
+            'font-family: \'Inter\', sans-serif; font-size: 0.72rem;',
+            'padding: 0.2rem 0.5rem; border-radius: 5px;',
+            `border: 1px solid ${failed ? color : 'var(--border)'};`,
+            failed ? `background: ${color}22; font-weight: 600;` : '',
+            status === 'unknown' ? 'opacity: 0.5;' : '',
+        ].join(' ');
+
+        const dot = document.createElement('span');
+        dot.style.cssText = `width: 6px; height: 6px; border-radius: 50%; background: ${color}; flex: none;`;
+        rung.appendChild(dot);
+
+        const text = document.createElement('span');
+        text.innerText = label;
+        rung.appendChild(text);
+        wrap.appendChild(rung);
+
+        if (index < LADDER_RUNGS.length - 1) {
+            const arrow = document.createElement('span');
+            arrow.style.cssText = 'opacity: 0.3; font-size: 0.7rem;';
+            arrow.innerText = '→';
+            wrap.appendChild(arrow);
+        }
+    });
+
+    chatLog.appendChild(wrap);
+
+    const parts = [];
+    if (connectivity.severity) parts.push(connectivity.severity);
+    if (connectivity.failed_at) {
+        parts.push(`first failure at ${connectivity.failed_at}`);
+    } else if (connectivity.severity === 'online') {
+        parts.push('every layer checked out');
+    }
+    if (parts.length > 0) {
+        const line = appendBlock(parts.join(' · '), 'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.8;');
+        if (line && connectivity.severity) {
+            line.style.color = NETWORK_SEVERITY_COLORS[connectivity.severity] || '';
+        }
+    }
+}
+
+function renderInterfacesTable(interfaces) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse; width: calc(100% - 1.8rem);';
+    interfaces.forEach((iface) => {
+        const tr = document.createElement('tr');
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; font-weight: 500; white-space: nowrap; vertical-align: top;';
+        name.innerText = iface.name;
+        tr.appendChild(name);
+
+        const stats = document.createElement('td');
+        stats.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; opacity: 0.75; white-space: nowrap; vertical-align: top;';
+        const bits = [];
+        if (iface.kind) bits.push(iface.kind);
+        if (iface.state) bits.push(iface.state);
+        if (iface.ipv4) bits.push(iface.ipv4);
+        if (iface.ipv6) bits.push(iface.ipv6);
+        if (iface.signal_dbm != null) bits.push(`${iface.signal_dbm} dBm`);
+        stats.innerText = bits.join(' · ');
+        tr.appendChild(stats);
+
+        const detail = document.createElement('td');
+        detail.style.cssText = 'padding: 0.25rem 0; opacity: 0.65; word-break: break-word;';
+        detail.innerText = iface.detail || '';
+        tr.appendChild(detail);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+function renderConnectionsTable(connections) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse; width: calc(100% - 1.8rem);';
+    connections.forEach((entry) => {
+        const tr = document.createElement('tr');
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; font-weight: 500; white-space: nowrap; vertical-align: top;';
+        name.innerText = entry.name;
+        tr.appendChild(name);
+
+        const stats = document.createElement('td');
+        stats.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; opacity: 0.75; white-space: nowrap; vertical-align: top;';
+        const bits = [];
+        if (entry.connections != null) bits.push(`${entry.connections} conn${entry.connections === 1 ? '' : 's'}`);
+        if (entry.listening) bits.push(`${entry.listening} listening`);
+        stats.innerText = bits.join(' · ');
+        tr.appendChild(stats);
+
+        const detail = document.createElement('td');
+        detail.style.cssText = 'padding: 0.25rem 0; opacity: 0.65; word-break: break-word;';
+        detail.innerText = entry.detail || '';
+        tr.appendChild(detail);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+const EXPOSURE_LABELS = {
+    'all-interfaces': 'reachable from your network',
+    local: 'this machine only',
+    unknown: 'exposure unknown',
+};
+
+function renderListeningTable(ports) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse; width: calc(100% - 1.8rem);';
+    ports.forEach((entry) => {
+        const tr = document.createElement('tr');
+
+        const port = document.createElement('td');
+        port.style.cssText = 'padding: 0.15rem 0.6rem 0.15rem 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; vertical-align: top;';
+        port.innerText = [entry.protocol, entry.port].filter((v) => v != null && v !== '').join('/');
+        tr.appendChild(port);
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.15rem 0.9rem 0.15rem 0; font-weight: 500; vertical-align: top;';
+        name.innerText = entry.process || '';
+        tr.appendChild(name);
+
+        // Whether a port is reachable from outside is the security-relevant half of the row, so it
+        // is spelled out rather than left as a bind address the reader has to interpret.
+        const exposure = document.createElement('td');
+        exposure.style.cssText = 'padding: 0.15rem 0; opacity: 0.75; word-break: break-word;';
+        const label = EXPOSURE_LABELS[entry.exposure] || '';
+        exposure.innerText = [entry.address, label].filter(Boolean).join(' · ');
+        if (entry.exposure === 'all-interfaces') {
+            exposure.style.color = NETWORK_SEVERITY_COLORS.degraded;
+            exposure.style.opacity = '1';
+        }
+        tr.appendChild(exposure);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+function renderNetworkReport(report) {
+    if (!report) return;
+
+    if (report.summary) appendMessage('assistant', report.summary);
+    if (report.salvaged) appendSalvagedNotice();
+    if (report.explanation) {
+        appendBlock(report.explanation, 'font-size: 0.82rem; line-height: 1.5; padding: 0 0.9rem; opacity: 0.9;');
+    }
+
+    // The ladder goes first: where it broke is the answer, and everything below is supporting detail.
+    if (report.connectivity) renderConnectivityLadder(report.connectivity);
+
+    if (report.interfaces && report.interfaces.length > 0) {
+        appendBlock('Interfaces', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+        renderInterfacesTable(report.interfaces);
+    }
+
+    if (report.connections && report.connections.length > 0) {
+        appendBlock('Connections by application', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+        renderConnectionsTable(report.connections);
+
+        // Stated directly beneath the list it qualifies, so the caveat is read with the data rather
+        // than after it.
+        if (report.confidence === 'degraded') {
+            appendBlock(
+                'Some sockets could not be matched to a program, which needs root, so the owners of those connections are unknown. The counts, ports and remote addresses above are accurate.',
+                'font-size: 0.75rem; padding: 0.3rem 0.9rem 0; opacity: 0.7; font-style: italic;',
+            );
+        }
+    }
+
+    if (report.listening && report.listening.length > 0) {
+        appendBlock('Listening ports', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+        renderListeningTable(report.listening);
+    }
+
+    appendFactsTable(report.facts);
+
+    if (report.standout) {
+        appendBlock(report.standout, 'font-size: 0.8rem; padding: 0.4rem 0.9rem; line-height: 1.5; border-left: 2px solid var(--border); margin: 0.3rem 0.9rem; font-weight: 500;');
+    }
+
+    if (report.suggestion) {
+        appendBlock(report.suggestion, 'font-size: 0.8rem; padding: 0.4rem 0.9rem; line-height: 1.5; border-left: 2px solid var(--border); margin: 0.3rem 0.9rem;');
+    }
+}
+
 // One entry per agent that renders a structured report, keyed by the orchestrator's `mode`. Adding a
-// fourth agent means adding a render function and a line here, not another branch in the switch below.
-const REPORT_RENDERERS = { disk: renderDiskReport, process: renderProcessReport };
+// fifth agent means adding a render function and a line here, not another branch in the switch below.
+const REPORT_RENDERERS = { disk: renderDiskReport, process: renderProcessReport, network: renderNetworkReport };
 
 function handleOrchestratorEvent(rawEvent) {
     let data;
@@ -944,7 +1159,11 @@ function handleOrchestratorEvent(rawEvent) {
             showRunningBanner(data.session_id, data.session_name);
             break;
         case 'classified': {
-            const headers = { disk: 'Checking storage', process: "Checking what's running" };
+            const headers = {
+                disk: 'Checking storage',
+                process: "Checking what's running",
+                network: 'Checking the network',
+            };
             setTraceHeader(headers[data.mode] || 'Answering');
             break;
         }

@@ -10,7 +10,7 @@ logger = logging.getLogger("orchestrator")
 CLASSIFY_SYSTEM_PROMPT = load_prompt("orchestrator_classify")
 
 # Every specialist agent's mode. "general" is the fallback and is not an agent.
-AGENT_MODES = ("disk", "process")
+AGENT_MODES = ("disk", "process", "network")
 GENERAL = "general"
 
 

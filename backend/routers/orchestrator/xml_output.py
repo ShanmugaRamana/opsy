@@ -9,9 +9,13 @@ logger = logging.getLogger("orchestrator")
 
 NO_ANSWER_CONTENT = "The model finished without returning a readable answer. Try asking again."
 
-# Marks a stored chat row as an agent-mode turn (disk/process) - the general path's stored XML is
-# the model's own <response> reply, unmarked, same as what parse_response already handles.
-_AGENT_MODE_RE = re.compile(r'<response\b[^>]*\bmode="(disk|process)"')
+# Marks a stored chat row as an agent-mode turn - the general path's stored XML is the model's own
+# <response> reply, unmarked, same as what parse_response already handles.
+#
+# This alternation has to list every agent mode. A mode missing from it does not raise: the stored
+# turn silently falls through to parse_response, replays as "general", and its report is dropped from
+# the transcript, so the live turn looks perfect and only a reload shows the damage.
+_AGENT_MODE_RE = re.compile(r'<response\b[^>]*\bmode="(disk|process|network)"')
 
 
 def _element_text(element):

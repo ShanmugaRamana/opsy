@@ -23,6 +23,7 @@ def _to_turn(row):
         content=parsed.get("content"),
         disk_report=parsed.get("disk_report"),
         process_report=parsed.get("process_report"),
+        network_report=parsed.get("network_report"),
         commands_run=parsed.get("commands_run", []),
     )
 

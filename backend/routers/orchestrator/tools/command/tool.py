@@ -1,7 +1,9 @@
 """Execution for commands the agent asked permission to run.
 
-This is the escape hatch for questions the disk allow-list cannot answer - "which is the smallest
-file", "list everything under /var" - where the agent knows the command but has no entry for it.
+This is the escape hatch for questions an agent's own allow-list cannot answer - "which is the
+smallest file", "list everything under /var" - where the agent knows the command but has no entry for
+it. Every agent shares this one flow, so the deny-list below has to cover every subject any of them
+touches, not just the one it was first written for.
 Nothing here runs without an explicit approval recorded in routers.orchestrator.permissions.
 
 Two properties do the safety work:
@@ -10,8 +12,10 @@ Two properties do the safety work:
   shell=False, so pipes, redirects, globs and command substitution are not interpreted. A pipeline
   like `find ... | sort -n | head` has to become argv plus post-processing in Python, which is why
   the shell-adjacent binaries below are refused rather than tolerated.
-- **Read-only.** The disk agent's own prompt already promises the user "you never modify, delete or
-  reconfigure anything"; this list is that promise made enforceable.
+- **Read-only.** Every agent's prompt promises the user "you never modify, delete or reconfigure
+  anything"; this list is that promise made enforceable. A binary belongs here if *any* of its
+  invocations changes the machine, because the approval card shows the user a command, not a proof
+  that its arguments are harmless.
 """
 import logging
 import os
@@ -46,14 +50,34 @@ DENIED_BINARIES = {
     "sudo", "su", "doas", "pkexec", "sh", "bash", "zsh", "dash", "ksh", "csh", "tcsh", "fish",
     "env", "nohup", "setsid", "xargs", "exec", "eval", "python", "python3", "perl", "ruby", "node",
     "awk", "gawk", "mawk", "sed", "ed", "vi", "vim", "nano", "emacs",
-    # network
+    # network transfer and remote access
     "curl", "wget", "nc", "ncat", "netcat", "ssh", "scp", "sftp", "rsync", "ftp", "telnet",
-    "iptables", "nft", "ip", "ifconfig",
+    "iptables", "ip6tables", "nft", "ip", "ifconfig",
+    # network configuration and management. Their read-only uses are covered by the network tool
+    # group, where Opsy owns the argv; admitting the binary here would mean trusting subcommand
+    # parsing that this deny-list does not do, and every one of these has a mutating subcommand:
+    # `nmcli con down`, `iw dev wlan0 disconnect`, `resolvectl flush-caches`, `ethtool -s`,
+    # `dhclient -r`, `rfkill block wifi`, `tc qdisc add`.
+    "nmcli", "nmtui", "iw", "iwconfig", "iwlist", "iwpriv", "wpa_cli", "wpa_supplicant",
+    "wpa_passphrase", "dhclient", "dhcpcd", "dhcpcd5", "resolvectl", "systemd-resolve",
+    "ethtool", "tc", "brctl", "bridge", "route", "arp", "rfkill", "netplan", "networkctl",
+    "wg", "wg-quick", "openvpn", "ipsec", "tailscale",
     # scheduling and accounts
     "crontab", "at", "batch", "useradd", "userdel", "usermod", "groupadd", "passwd", "chpasswd",
     "visudo", "chsh", "chfn",
     # misc tooling that writes
     "git", "make", "cmake", "docker", "podman", "kubectl", "systemd-run", "tar", "unzip", "zip",
+}
+
+# Refused for a different reason than DENIED_BINARIES, and so with a different message: these do not
+# change this machine, but they reach past it. Scanning hosts is not observing the user's own system
+# and on a network they do not own it is not theirs to do; a packet capture reads other people's
+# traffic and the contents of unencrypted sessions; a throughput test ships real data to a third
+# party. "Read-only" covers what Opsy writes, not how far it reaches, so that limit is drawn here.
+DENIED_PROBES = {
+    "nmap", "masscan", "zmap", "arp-scan", "netdiscover", "fping", "hping3",
+    "tcpdump", "tshark", "dumpcap", "ngrep", "wireshark",
+    "iperf", "iperf3", "speedtest", "speedtest-cli", "socat",
 }
 
 # Options that turn an otherwise read-only binary into a writing one. `find -delete` and
@@ -99,6 +123,12 @@ def validate_argv(argv):
         return None, (
             f"'{binary}' can change the system, escalate privileges or open a shell. Opsy only runs "
             "read-only observation commands."
+        )
+    if binary in DENIED_PROBES:
+        return None, (
+            f"'{binary}' scans other hosts, captures traffic or generates load on the network. Opsy "
+            "observes this machine's own configuration and state, and does not probe the network "
+            "around it."
         )
 
     for token in tokens[1:]:

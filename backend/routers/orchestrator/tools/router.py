@@ -2,13 +2,19 @@ from fastapi import APIRouter
 
 from routers.orchestrator.tools.command.router import TOOL_GROUP_INFO as _command_tool_group_info
 from routers.orchestrator.tools.disk.router import TOOL_GROUP_INFO as _disk_tool_group_info
+from routers.orchestrator.tools.network.router import TOOL_GROUP_INFO as _network_tool_group_info
 from routers.orchestrator.tools.process.router import TOOL_GROUP_INFO as _process_tool_group_info
 
 router = APIRouter(prefix="/linux/tools", tags=["tools"])
 
 # One entry per tool group under routers/tools/. Adding a new tool group means adding its
 # TOOL_GROUP_INFO here, not editing any existing tool group's code.
-TOOL_GROUP_REGISTRY = [_disk_tool_group_info, _process_tool_group_info, _command_tool_group_info]
+TOOL_GROUP_REGISTRY = [
+    _disk_tool_group_info,
+    _process_tool_group_info,
+    _network_tool_group_info,
+    _command_tool_group_info,
+]
 
 
 @router.get("/")

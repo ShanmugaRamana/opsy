@@ -93,6 +93,71 @@ class ProcessReport(BaseModel):
     salvaged: bool = False
 
 
+class ConnectivityLadder(BaseModel):
+    """Where connectivity broke, as a position in a chain rather than a quantity.
+
+    Each layer is ok, fail or unknown. The pair that carries the diagnosis is dns and internet: the
+    internet reachable by address while dns fails is a resolver problem, and both failing is an
+    upstream one. Collapsing them into a single "online" boolean would discard the only distinction
+    the user needs."""
+
+    link: str | None = None
+    address: str | None = None
+    gateway: str | None = None
+    dns: str | None = None
+    internet: str | None = None
+    failed_at: str | None = None
+    # online | degraded | offline. Never stronger than the layers support - the parser enforces that,
+    # since rounding a partial failure up to "online" is the claim a model is most tempted to make.
+    severity: str | None = None
+
+
+class NetworkInterface(BaseModel):
+    name: str
+    kind: str | None = None  # wifi | ethernet | loopback | tunnel | bridge | bond | virtual | unknown
+    state: str | None = None  # up | down | no-carrier
+    ipv4: str | None = None
+    ipv6: str | None = None
+    signal_dbm: float | None = None
+    detail: str | None = None
+
+
+class ConnectionEntry(BaseModel):
+    """One application, not one socket - the network counterpart to AppEntry. A browser holding sixty
+    connections is a single entry, which is what makes "what is using my network" answerable."""
+
+    name: str
+    connections: int | None = None
+    listening: int | None = None
+    detail: str | None = None
+
+
+class ListeningPort(BaseModel):
+    port: int | None = None
+    protocol: str | None = None  # tcp | udp
+    address: str | None = None
+    process: str | None = None
+    # local | all-interfaces | unknown. The security-relevant half of the row: the same port number
+    # on 127.0.0.1 and on 0.0.0.0 are completely different exposures.
+    exposure: str | None = None
+
+
+class NetworkReport(BaseModel):
+    summary: str
+    explanation: str | None = None
+    # full | degraded. Mirrors what the tool reported about socket attribution, so the client can
+    # state the limitation instead of quietly rendering a weaker answer as a confident one.
+    confidence: str | None = None
+    connectivity: ConnectivityLadder | None = None
+    interfaces: list[NetworkInterface] = []
+    connections: list[ConnectionEntry] = []
+    listening: list[ListeningPort] = []
+    facts: list[Fact] = []
+    standout: str | None = None
+    suggestion: str | None = None
+    salvaged: bool = False
+
+
 class OrchestratorResponse(BaseModel):
     provider: str
     model_id: str
@@ -103,4 +168,5 @@ class OrchestratorResponse(BaseModel):
     raw_xml: str | None = None
     disk_report: DiskReport | None = None
     process_report: ProcessReport | None = None
+    network_report: NetworkReport | None = None
     commands_run: list[CommandRun] = []

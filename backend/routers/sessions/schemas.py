@@ -24,4 +24,5 @@ class ChatTurn(BaseModel):
     content: str | None = None
     disk_report: dict | None = None
     process_report: dict | None = None
+    network_report: dict | None = None
     commands_run: list = []

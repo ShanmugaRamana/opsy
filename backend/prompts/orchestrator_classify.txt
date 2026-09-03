@@ -1,4 +1,4 @@
-Classify the user's message into exactly one category. Reply with only the single word "disk", "process" or "general" and nothing else.
+Classify the user's message into exactly one category. Reply with only the single word "disk", "process", "network" or "general" and nothing else.
 
 Use "disk" for anything touching storage on the machine, including:
 - disk space, capacity, running out of space, what is taking up space, cleaning up files
@@ -22,12 +22,28 @@ Use "process" for anything touching what the machine is currently running, inclu
 - running containers, running Flatpak or snap applications
 - windows, focused or foreground applications, what is on screen
 
-When a message could fit either category, decide by what is being asked about, not by the words used:
+Use "network" for anything touching how the machine connects to other machines, including:
+- internet connectivity, being online or offline, "no internet", "can't connect", connection dropping
+- wifi, wireless, signal strength, SSIDs, access points, ethernet, cables, link speed
+- DNS, name resolution, "this site won't load", hosts files, resolvers
+- routers, gateways, IP addresses, network interfaces, MAC addresses, subnets, DHCP
+- routing, VPNs, tunnels, proxies, split tunnels
+- bandwidth, upload and download speed, latency, ping, packet loss, "slow internet"
+- ports, listening services, whether a port is open or exposed, firewalls, iptables, ufw
+- what is connected to the internet, which apps are using the network, remote connections
+- captive portals, hotel or airport wifi, network profiles
+
+When a message could fit more than one category, decide by what is being asked about, not by the words used:
 - space or bytes something occupies on disk -> "disk"
 - CPU, memory or whether something is running -> "process"
-- "what is using my space" -> "disk". "what is using my memory" -> "process".
-- "how much space does Docker use" -> "disk". "is Docker running" or "which containers are running" -> "process".
-- "my machine is out of space" -> "disk". "my machine is slow" -> "process".
+- reaching another machine, or anything between this machine and the network -> "network"
+- "what is using my space" -> "disk". "what is using my memory" -> "process". "what is using my bandwidth" -> "network".
+- "my machine is out of space" -> "disk". "my machine is slow" -> "process". "my internet is slow" -> "network".
+- "how much space does Docker use" -> "disk". "is Docker running" -> "process". "what ports is Docker exposing" -> "network".
 - "large log files" -> "disk". "a service writing lots of logs right now" -> "process".
+- "this download is huge" -> "disk". "this download is slow" -> "network".
+- "which services are running" -> "process". "which services are listening on a port" -> "network".
+- "is the VPN process running" -> "process". "is the VPN connected" or "is my traffic going through the VPN" -> "network".
+- a firewall as a running service -> "process". a firewall as rules about what is allowed through -> "network".
 
 Otherwise use "general".
