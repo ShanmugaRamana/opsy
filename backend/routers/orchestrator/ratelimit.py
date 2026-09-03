@@ -14,11 +14,10 @@ import time
 logger = logging.getLogger("orchestrator.ratelimit")
 
 MIN_CALL_INTERVAL = float(os.getenv("PROVIDER_MIN_CALL_INTERVAL", "5.0"))
-# The budget has to outlast a per-minute quota window, because that is what a 429 usually is: the
-# free Gemini tier meters requests and tokens per minute and asks for a wait in the tens of seconds,
-# so a budget that gives up after a few seconds turns a quota that would have cleared on its own into
-# a failed turn.
-MAX_RATE_LIMIT_RETRIES = int(os.getenv("PROVIDER_RATE_LIMIT_RETRIES", "6"))
+# Three attempts, but each one waits long enough to matter: a 429 is usually a per-minute quota (the
+# free Gemini tier meters requests and tokens per minute and asks for a wait in the tens of seconds),
+# so what rescues a turn is the length of the waits, not the number of them.
+MAX_RATE_LIMIT_RETRIES = int(os.getenv("PROVIDER_RATE_LIMIT_RETRIES", "3"))
 # Dropped connections, read timeouts and provider 5xx are worth retrying too, but they say nothing
 # about how long to wait, so they get plain exponential backoff on a smaller budget than a 429.
 MAX_TRANSIENT_RETRIES = int(os.getenv("PROVIDER_TRANSIENT_RETRIES", "2"))
