@@ -13,7 +13,7 @@ import time
 
 logger = logging.getLogger("orchestrator.ratelimit")
 
-MIN_CALL_INTERVAL = float(os.getenv("PROVIDER_MIN_CALL_INTERVAL", "1.5"))
+MIN_CALL_INTERVAL = float(os.getenv("PROVIDER_MIN_CALL_INTERVAL", "5.0"))
 # The budget has to outlast a per-minute quota window, because that is what a 429 usually is: the
 # free Gemini tier meters requests and tokens per minute and asks for a wait in the tens of seconds,
 # so a budget that gives up after a few seconds turns a quota that would have cleared on its own into
@@ -39,11 +39,26 @@ _last_call_at = 0.0
 
 
 async def space_calls():
-    """Waits, if needed, so consecutive provider calls are not fired back to back."""
+    """Waits, if needed, so consecutive provider calls are not fired back to back.
+
+    The gap is measured from the moment the previous call *finished* (`mark_call_end`), not from when
+    it started. Measuring from the start meant a round that streamed for longer than the interval was
+    followed immediately by the next one, which is exactly the case that walks into a per-minute
+    quota: a long round is a token-heavy round. A round that succeeded is spaced like one that was
+    refused - the pause is there to let the quota window recover, and success says nothing about how
+    much of it is left."""
     global _last_call_at
-    elapsed = time.monotonic() - _last_call_at
-    if 0 < elapsed < MIN_CALL_INTERVAL:
-        await asyncio.sleep(MIN_CALL_INTERVAL - elapsed)
+    if _last_call_at:
+        elapsed = time.monotonic() - _last_call_at
+        if elapsed < MIN_CALL_INTERVAL:
+            await asyncio.sleep(MIN_CALL_INTERVAL - elapsed)
+    _last_call_at = time.monotonic()
+
+
+def mark_call_end():
+    """Stamps a provider call as finished, so the next one is spaced from here rather than from the
+    point this one began. Called on the success path too - see space_calls."""
+    global _last_call_at
     _last_call_at = time.monotonic()
 
 

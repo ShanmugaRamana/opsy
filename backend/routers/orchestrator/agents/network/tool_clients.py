@@ -25,6 +25,7 @@ from routers.orchestrator.ratelimit import (
     can_retry_rate_limit,
     is_rate_limited,
     is_transient_status,
+    mark_call_end,
     retry_delay,
     space_calls,
     transient_delay,
@@ -243,6 +244,7 @@ async def _anthropic_round(client, model_id, messages, tools, result):
                 if narration:
                     yield {"type": "thinking_delta", "text": narration}
                 result["message"] = await stream.get_final_message()
+            mark_call_end()
             return
         except anthropic.RateLimitError as e:
             headers = getattr(getattr(e, "response", None), "headers", None)
@@ -451,6 +453,8 @@ async def _openai_round(base_url, api_key, model_id, messages, tools, result):
                 result["error"] = str(e)
                 return
             transient_reason = str(e)[:120]
+
+        mark_call_end()
 
         if retry_after is not None:
             yield {"type": "rate_limited", "retry_in": retry_after, "attempt": attempt + 1}
@@ -674,6 +678,8 @@ async def _gemini_round(url, api_key, contents, tools, result):
                 result["error"] = str(e)
                 return
             transient_reason = str(e)[:120]
+
+        mark_call_end()
 
         if retry_after is not None:
             yield {"type": "rate_limited", "retry_in": retry_after, "attempt": attempt + 1}

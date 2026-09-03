@@ -8,6 +8,7 @@ from .ratelimit import (
     MAX_RATE_LIMIT_RETRIES,
     can_retry_rate_limit,
     is_rate_limited,
+    mark_call_end,
     retry_delay,
     space_calls,
     wait_before_retry,
@@ -45,6 +46,7 @@ async def _call_anthropic(api_key, model_id, system_prompt, message):
         except anthropic.APIError as e:
             raise ProviderCallError(str(e)) from e
 
+        mark_call_end()
         for block in response.content:
             if block.type == "text":
                 return block.text
@@ -67,6 +69,7 @@ async def _call_openai_compatible(base_url, api_key, model_id, system_prompt, me
                 response = await client.post(
                     base_url, headers={"Authorization": f"Bearer {api_key}"}, json=payload
                 )
+            mark_call_end()
 
             if is_rate_limited(response.status_code) and can_retry_rate_limit(
                 attempt, response.headers, response.text
@@ -109,6 +112,7 @@ async def _call_gemini(api_key, model_id, system_prompt, message):
         try:
             async with httpx.AsyncClient(timeout=TIMEOUT) as client:
                 response = await client.post(url, params={"key": api_key}, json=payload)
+            mark_call_end()
 
             if is_rate_limited(response.status_code) and can_retry_rate_limit(
                 attempt, response.headers, response.text
