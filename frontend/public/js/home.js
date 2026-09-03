@@ -205,6 +205,149 @@ async function loadProviderAndModelDropdowns() {
 
 loadProviderAndModelDropdowns();
 
+// ---- Sessions: sidebar list, switching, and the "chat already running" guard ----
+//
+// currentSessionId is null until either a message is sent (the backend creates and reports one
+// back via `session_created`) or the user opens a past chat from the sidebar - it is never restored
+// from the DB's "active" session on load, since doing so without also replaying that session's
+// transcript would silently attach the next typed message to a conversation nothing on screen
+// shows. turnInProgress mirrors the live trace's lifetime and is what New Chat and the sidebar
+// check before letting the user switch away mid-turn (see plans/session-management.md).
+
+const SESSIONS_URL = `${BACKEND_URL}/linux/sessions`;
+
+let currentSessionId = null;
+let turnInProgress = false;
+let sessionsById = {};
+
+const newChatBtn = document.getElementById('new-chat-btn');
+const sessionListEl = document.getElementById('session-list');
+const runningBanner = document.getElementById('running-banner');
+const runningBannerText = document.getElementById('running-banner-text');
+const runningBannerBtn = document.getElementById('running-banner-btn');
+
+function showRunningBanner(sessionId, sessionName) {
+    runningBannerText.innerText = `"${sessionName || 'A chat'}" is still running.`;
+    runningBanner.dataset.sessionId = sessionId;
+    runningBanner.style.display = 'flex';
+}
+
+function hideRunningBanner() {
+    runningBanner.style.display = 'none';
+    delete runningBanner.dataset.sessionId;
+}
+
+runningBannerBtn.addEventListener('click', () => {
+    const sessionId = runningBanner.dataset.sessionId;
+    hideRunningBanner();
+    if (sessionId) switchToSession(Number(sessionId), { skipActivate: true });
+});
+
+function setTurnInProgress(value) {
+    turnInProgress = value;
+    renderSessionList();
+}
+
+function renderSessionList() {
+    const sessions = Object.values(sessionsById).sort(
+        (a, b) => new Date(b.updated_at) - new Date(a.updated_at)
+    );
+    newChatBtn.disabled = turnInProgress;
+    sessionListEl.innerHTML = '';
+    sessions.forEach((session) => {
+        const item = document.createElement('button');
+        item.className = 'session-item' + (session.session_id === currentSessionId ? ' active' : '');
+        item.innerText = session.session_name;
+        item.disabled = turnInProgress;
+        item.addEventListener('click', () => switchToSession(session.session_id));
+        sessionListEl.appendChild(item);
+    });
+}
+
+async function loadSessions() {
+    try {
+        const res = await fetch(SESSIONS_URL);
+        if (!res.ok) return;
+        const sessions = await res.json();
+        sessionsById = {};
+        sessions.forEach((s) => { sessionsById[s.session_id] = s; });
+        renderSessionList();
+    } catch (e) {
+        // Backend/database not reachable, the sidebar list just stays empty
+    }
+}
+
+// Reuses the exact renderers the live "final" event already uses, so a replayed turn looks
+// identical to how it looked when it actually happened.
+function renderStoredTurn(turn) {
+    if (turn.role === 'user') {
+        appendMessage('user', turn.content || '');
+        return;
+    }
+    const renderer = REPORT_RENDERERS[turn.mode];
+    if (renderer) {
+        renderer(turn[`${turn.mode}_report`]);
+    } else {
+        appendMessage('assistant', turn.content || '');
+    }
+}
+
+function resetChatView() {
+    chatLog.innerHTML = '';
+    chatLog.style.display = 'none';
+    document.querySelector('.main-content').classList.remove('is-chatting');
+    trace = null;
+}
+
+async function switchToSession(sessionId, options = {}) {
+    if (turnInProgress || sessionId === currentSessionId) return;
+
+    if (!options.skipActivate) {
+        try {
+            const res = await fetch(`${SESSIONS_URL}/${sessionId}/activate`, { method: 'POST' });
+            if (res.status === 409) {
+                const body = await res.json().catch(() => ({}));
+                const detail = body.detail || {};
+                showRunningBanner(detail.session_id, detail.session_name);
+                return;
+            }
+            if (!res.ok) return;
+        } catch (e) {
+            appendMessage('error', 'Could not reach the backend to switch chats.');
+            return;
+        }
+    }
+
+    let turns = [];
+    try {
+        const res = await fetch(`${SESSIONS_URL}/${sessionId}/chats`);
+        if (res.ok) turns = await res.json();
+    } catch (e) {
+        // Falls through with an empty transcript rather than blocking the switch entirely
+    }
+
+    currentSessionId = sessionId;
+    hideRunningBanner();
+    resetChatView();
+    turns.forEach(renderStoredTurn);
+    scrollChatToBottom();
+    renderSessionList();
+}
+
+newChatBtn.addEventListener('click', () => {
+    if (turnInProgress) {
+        const running = sessionsById[currentSessionId];
+        showRunningBanner(currentSessionId, running ? running.session_name : null);
+        return;
+    }
+    currentSessionId = null;
+    hideRunningBanner();
+    resetChatView();
+    renderSessionList();
+});
+
+loadSessions();
+
 // ---- Send message to the orchestrator ----
 
 const chatLog = document.getElementById('chat-log');
@@ -777,7 +920,28 @@ function handleOrchestratorEvent(rawEvent) {
 
     switch (data.type) {
         case 'started':
+            setTurnInProgress(true);
             startTrace();
+            break;
+        case 'session_created':
+            currentSessionId = data.session_id;
+            sessionsById[data.session_id] = {
+                session_id: data.session_id,
+                session_name: data.session_name,
+                is_active: true,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+            };
+            renderSessionList();
+            break;
+        case 'session_renamed':
+            if (sessionsById[data.session_id]) {
+                sessionsById[data.session_id].session_name = data.session_name;
+                renderSessionList();
+            }
+            break;
+        case 'already_running':
+            showRunningBanner(data.session_id, data.session_name);
             break;
         case 'classified': {
             const headers = { disk: 'Checking storage', process: "Checking what's running" };
@@ -807,6 +971,7 @@ function handleOrchestratorEvent(rawEvent) {
             finishTraceRow(data);
             break;
         case 'final': {
+            setTurnInProgress(false);
             // The general path doesn't stream, so its thinking arrives whole; keep it in the panel.
             if (data.thinking && trace && !trace.thinking.innerText) {
                 trace.thinking.innerText = data.thinking;
@@ -823,6 +988,7 @@ function handleOrchestratorEvent(rawEvent) {
             break;
         }
         case 'error':
+            setTurnInProgress(false);
             closeTrace(true);
             appendMessage('error', friendlyError(data.detail));
             break;
@@ -854,6 +1020,7 @@ function sendMessage() {
             provider: selectedProvider,
             model_id: selectedModelId,
             message,
+            session_id: currentSessionId,
         }));
     });
 }

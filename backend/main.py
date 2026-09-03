@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import byok, hardware, health, models, onboarding, orchestrator, root, system, user
+from routers import byok, hardware, health, models, onboarding, orchestrator, root, sessions, system, user
 from routers.orchestrator.agents.disk.router import router as disk_agent_router
 from routers.orchestrator.agents.process.router import router as process_agent_router
 from routers.orchestrator.agents.router import router as agents_catalog_router
@@ -31,6 +31,7 @@ app.include_router(user.router)
 app.include_router(hardware.router)
 app.include_router(byok.router)
 app.include_router(models.router)
+app.include_router(sessions.router)
 app.include_router(orchestrator.router)
 
 # Category: agents (routers/orchestrator/agents/) — GET /linux/agents/ catalogs every agent; each

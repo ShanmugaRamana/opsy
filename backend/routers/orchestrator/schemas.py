@@ -5,6 +5,9 @@ class OrchestratorRequest(BaseModel):
     provider: str
     model_id: str
     message: str = Field(min_length=1)
+    # None starts a brand new session; the orchestrator creates and returns one via the
+    # `session_created` event. Set to continue logging turns under an existing session.
+    session_id: int | None = None
 
 
 class CommandRun(BaseModel):
@@ -93,6 +96,7 @@ class ProcessReport(BaseModel):
 class OrchestratorResponse(BaseModel):
     provider: str
     model_id: str
+    session_id: int | None = None
     mode: str
     thinking: str | None = None
     content: str | None = None

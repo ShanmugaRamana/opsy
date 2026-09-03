@@ -1,0 +1,1 @@
+Read the user's message below and reply with only a short title for this chat session, 5 words maximum. No punctuation, no quotation marks, no markdown, and no preamble like "Title:" - reply with the title text itself and nothing else.

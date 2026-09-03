@@ -42,6 +42,15 @@ async def run(payload: OrchestratorRequest):
     async for event in run_orchestrator(payload):
         if event["type"] == "error":
             raise HTTPException(status_code=event.get("status", 502), detail=event["detail"])
+        if event["type"] == "already_running":
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "A chat is already running.",
+                    "session_id": event["session_id"],
+                    "session_name": event["session_name"],
+                },
+            )
         if event["type"] == "final":
             final_event = event
 
@@ -51,6 +60,7 @@ async def run(payload: OrchestratorRequest):
     return OrchestratorResponse(
         provider=payload.provider,
         model_id=payload.model_id,
+        session_id=final_event.get("session_id"),
         mode=final_event["mode"],
         thinking=final_event.get("thinking"),
         content=final_event.get("content"),

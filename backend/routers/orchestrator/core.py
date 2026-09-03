@@ -10,17 +10,21 @@ from core.crypto import decrypt
 from core.db import get_connection
 from routers.byok.queries import get_key
 from routers.byok.schemas import VALID_PROVIDERS
+from routers.sessions.queries import create_session, get_session, insert_chat, rename_session, touch_session
 
 from .agents.router import AGENT_WS_PATHS
 from .classify import classify_intent
 from .clients import ProviderCallError, call_provider
-from .prompts import BASE_SYSTEM_PROMPT
+from .prompts import BASE_SYSTEM_PROMPT, SESSION_TITLE_SYSTEM_PROMPT
 from .schemas import OrchestratorRequest
-from .xml_output import parse_response
+from .turn_state import clear_running_turn, get_running_turn, set_running_turn
+from .xml_output import parse_response, to_storage_xml
 
 logger = logging.getLogger("orchestrator")
 
 INTERNAL_WS_BASE = os.getenv("INTERNAL_WS_BASE", "ws://127.0.0.1:8000")
+
+NEW_SESSION_PLACEHOLDER_NAME = "New chat"
 
 
 def _get_key_sync(provider):
@@ -29,6 +33,74 @@ def _get_key_sync(provider):
         return get_key(conn, provider)
     finally:
         conn.close()
+
+
+def _create_session_sync(name):
+    conn = get_connection()
+    try:
+        session_id = create_session(conn, name)
+        conn.commit()
+        return session_id
+    finally:
+        conn.close()
+
+
+def _get_session_name_sync(session_id):
+    conn = get_connection()
+    try:
+        session = get_session(conn, session_id)
+        return session["session_name"] if session else None
+    finally:
+        conn.close()
+
+
+def _insert_chat_sync(session_id, role, chat_text):
+    conn = get_connection()
+    try:
+        insert_chat(conn, session_id, role, chat_text)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _touch_session_sync(session_id):
+    conn = get_connection()
+    try:
+        touch_session(conn, session_id)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _rename_session_sync(session_id, name):
+    conn = get_connection()
+    try:
+        rename_session(conn, session_id, name)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+async def _persist_final(session_id, final_event):
+    chat_xml = to_storage_xml(final_event)
+    await anyio.to_thread.run_sync(_insert_chat_sync, session_id, "assistant", chat_xml)
+    await anyio.to_thread.run_sync(_touch_session_sync, session_id)
+
+
+async def _generate_title(provider, api_key, model_id, message):
+    """Best-effort short title for a new session, from the same provider/model the user picked.
+    Any failure just leaves the session named "New chat" rather than blocking the turn on it - this
+    runs alongside the main turn in the same task group, so a raised exception here must not be
+    allowed to cancel that turn."""
+    try:
+        raw = await call_provider(provider, api_key, model_id, SESSION_TITLE_SYSTEM_PROMPT, message)
+    except Exception as e:
+        logger.warning(f"session title generation failed: {e}")
+        return None
+
+    title = (raw or "").strip().strip('"').strip("'")
+    title = title.splitlines()[0].strip() if title else ""
+    return title[:80] or None
 
 
 async def _relay_agent(mode, provider, api_key, model_id, message):
@@ -69,8 +141,20 @@ async def _relay_agent(mode, provider, api_key, model_id, message):
 
 async def run_orchestrator(request: OrchestratorRequest):
     """Async generator: yields event dicts as the turn progresses. The last event is always
-    type "final" (success) or "error" (failure). Shared by both the WS endpoint (forwards every
-    event live) and the POST endpoint (drains to the final event)."""
+    type "final" (success), "error" (failure), or "already_running" (rejected before anything
+    started). Shared by both the WS endpoint (forwards every event live) and the POST endpoint
+    (drains to the final event).
+
+    Every turn gets logged to the sessions/chats tables: a fresh chat (session_id is None) creates
+    and activates a new session first; an existing session_id just appends to it. Only one turn may
+    be in flight system-wide at a time - see turn_state - so starting a brand new chat while another
+    is still running is rejected outright rather than silently queued.
+    """
+    running = get_running_turn()
+    if request.session_id is None and running is not None:
+        yield {"type": "already_running", "session_id": running["session_id"], "session_name": running["session_name"]}
+        return
+
     if request.provider not in VALID_PROVIDERS:
         yield {"type": "error", "status": 400, "detail": f"Unknown provider: {request.provider}"}
         return
@@ -87,48 +171,86 @@ async def run_orchestrator(request: OrchestratorRequest):
 
     api_key = decrypt(key_row["api_key_encrypted"])
 
-    yield {"type": "started"}
+    is_new_session = request.session_id is None
+    if is_new_session:
+        session_id = await anyio.to_thread.run_sync(_create_session_sync, NEW_SESSION_PLACEHOLDER_NAME)
+        session_name = NEW_SESSION_PLACEHOLDER_NAME
+        yield {"type": "session_created", "session_id": session_id, "session_name": session_name}
+    else:
+        session_id = request.session_id
+        session_name = await anyio.to_thread.run_sync(_get_session_name_sync, session_id)
 
+    await anyio.to_thread.run_sync(_insert_chat_sync, session_id, "user", request.message)
+
+    # No early `return` from here on, deliberately: every exit needs to fall through to the
+    # `finally` (clear the running-turn tracker) and then the title follow-up below, regardless of
+    # which branch the turn took or whether it succeeded - a `return` inside the `try` would skip
+    # both by exiting the generator outright.
+    set_running_turn(session_id, session_name)
     try:
-        mode = await classify_intent(request.provider, api_key, request.model_id, request.message)
-    except ProviderCallError as e:
-        logger.error(f"classification failed: {e}")
-        yield {
-            "type": "error",
-            "status": 429 if getattr(e, "rate_limited", False) else 502,
-            "detail": f"classification failed: {e}",
-        }
-        return
+        async with anyio.create_task_group() as tg:
+            title_holder = {}
+            if is_new_session:
+                async def _title_worker():
+                    title_holder["title"] = await _generate_title(
+                        request.provider, api_key, request.model_id, request.message
+                    )
+                tg.start_soon(_title_worker)
 
-    yield {"type": "classified", "mode": mode}
+            yield {"type": "started"}
 
-    if mode in AGENT_WS_PATHS:
-        async for event in _relay_agent(
-            mode, request.provider, api_key, request.model_id, request.message
-        ):
-            if event["type"] == "error":
-                event.setdefault("status", 502)
-            yield event
-        return
+            mode = None
+            try:
+                mode = await classify_intent(request.provider, api_key, request.model_id, request.message)
+            except ProviderCallError as e:
+                logger.error(f"classification failed: {e}")
+                yield {
+                    "type": "error",
+                    "status": 429 if getattr(e, "rate_limited", False) else 502,
+                    "detail": f"classification failed: {e}",
+                }
 
-    try:
-        raw_text = await call_provider(
-            request.provider, api_key, request.model_id, BASE_SYSTEM_PROMPT, request.message
-        )
-    except ProviderCallError as e:
-        logger.error(f"{request.provider} call failed: {e}")
-        yield {
-            "type": "error",
-            "status": 429 if getattr(e, "rate_limited", False) else 502,
-            "detail": f"{request.provider} call failed: {e}",
-        }
-        return
+            if mode is not None:
+                yield {"type": "classified", "mode": mode}
 
-    thinking, content = parse_response(raw_text)
-    yield {
-        "type": "final",
-        "mode": "general",
-        "thinking": thinking,
-        "content": content,
-        "raw_xml": raw_text,
-    }
+                if mode in AGENT_WS_PATHS:
+                    async for event in _relay_agent(
+                        mode, request.provider, api_key, request.model_id, request.message
+                    ):
+                        if event["type"] == "error":
+                            event.setdefault("status", 502)
+                        if event["type"] == "final":
+                            event["session_id"] = session_id
+                            await _persist_final(session_id, event)
+                        yield event
+                else:
+                    try:
+                        raw_text = await call_provider(
+                            request.provider, api_key, request.model_id, BASE_SYSTEM_PROMPT, request.message
+                        )
+                    except ProviderCallError as e:
+                        logger.error(f"{request.provider} call failed: {e}")
+                        yield {
+                            "type": "error",
+                            "status": 429 if getattr(e, "rate_limited", False) else 502,
+                            "detail": f"{request.provider} call failed: {e}",
+                        }
+                    else:
+                        thinking, content = parse_response(raw_text)
+                        final_event = {
+                            "type": "final",
+                            "mode": "general",
+                            "session_id": session_id,
+                            "thinking": thinking,
+                            "content": content,
+                            "raw_xml": raw_text,
+                        }
+                        await _persist_final(session_id, final_event)
+                        yield final_event
+    finally:
+        clear_running_turn()
+
+    title = title_holder.get("title") if is_new_session else None
+    if title:
+        await anyio.to_thread.run_sync(_rename_session_sync, session_id, title)
+        yield {"type": "session_renamed", "session_id": session_id, "session_name": title}
