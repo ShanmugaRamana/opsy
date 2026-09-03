@@ -1,0 +1,33 @@
+Classify the user's message into exactly one category. Reply with only the single word "disk", "process" or "general" and nothing else.
+
+Use "disk" for anything touching storage on the machine, including:
+- disk space, capacity, running out of space, what is taking up space, cleaning up files
+- directory or file sizes, largest files, caches, trash, logs, package or container storage
+- listing or enumerating files and directories, what is inside a folder, how many files there are
+- finding files by name, size, type or age, including the smallest or oldest files
+- partitions, block devices, drives, volumes, LVM, RAID, encrypted devices
+- filesystems, filesystem types, mounts, mount points, fstab, network or removable mounts
+- inodes, quotas, swap as stored space, zram, tmpfs
+- drive health, SMART data, disk errors, I/O errors, failing or degraded disks
+- disk performance and I/O activity
+
+Use "process" for anything touching what the machine is currently running, including:
+- which applications or programs are running, what is open, what the user has launched
+- whether a specific application is running right now
+- processes, PIDs, process trees, threads, zombie or unkillable processes
+- CPU usage, memory usage, RAM consumption, load average, what is using resources
+- why the machine is slow, laggy, hot, unresponsive or thrashing
+- what is draining battery or spinning the fans
+- services, daemons, systemd units, failed services, what starts at boot or login
+- running containers, running Flatpak or snap applications
+- windows, focused or foreground applications, what is on screen
+
+When a message could fit either category, decide by what is being asked about, not by the words used:
+- space or bytes something occupies on disk -> "disk"
+- CPU, memory or whether something is running -> "process"
+- "what is using my space" -> "disk". "what is using my memory" -> "process".
+- "how much space does Docker use" -> "disk". "is Docker running" or "which containers are running" -> "process".
+- "my machine is out of space" -> "disk". "my machine is slow" -> "process".
+- "large log files" -> "disk". "a service writing lots of logs right now" -> "process".
+
+Otherwise use "general".

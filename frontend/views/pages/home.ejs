@@ -1,0 +1,107 @@
+
+    <aside class="sidebar" id="sidebar">
+        <header class="sidebar-header">
+            <h1 class="title">Opsy</h1>
+            <button class="collapse-btn" id="collapse-btn" title="Toggle Sidebar">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/></svg>
+            </button>
+        </header>
+        <div class="sidebar-content">
+            <button class="new-chat-btn" id="new-chat-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                <span>New Chat</span>
+            </button>
+            <div class="session-list" id="session-list"></div>
+        </div>
+        <div class="sidebar-footer">
+            <div class="user-profile">
+                <img src="/assets/profile/profile-1.jpg" alt="User" class="user-avatar" id="sidebar-user-avatar">
+                <div class="user-info">
+                    <span class="user-name" id="sidebar-user-name">Opsy User</span>
+                    <span class="user-role" id="sidebar-user-role">Developer</span>
+                </div>
+            </div>
+            <button class="settings-btn" title="Settings">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <div class="mode-switcher-container">
+            <div class="mode-switcher">
+                <button class="mode-btn active">Chat</button>
+                <button class="mode-btn">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+                    Ops
+                </button>
+            </div>
+        </div>
+
+        <div class="chat-fade-top"></div>
+
+        <div class="chat-scroll-area" id="chat-scroll-area">
+            <div class="chat-wrapper">
+                <div class="greeting-container" id="greeting-container">
+                    <img src="/assets/images/logo.png" alt="Opsy" class="greeting-logo">
+                    <h2 class="greeting-text" id="greeting-text">How can I help you?</h2>
+                </div>
+
+                <div id="chat-log" style="display: none; width: 100%; flex-direction: column; gap: 0.75rem;"></div>
+            </div>
+        </div>
+
+        <div class="running-banner" id="running-banner" style="display: none;">
+            <span id="running-banner-text">A chat is already running.</span>
+            <button id="running-banner-btn">Go to it</button>
+        </div>
+
+        <div class="chat-input-wrapper">
+            <div class="chat-input-container">
+                <input type="text" id="chat-input" placeholder="Message Opsy..." autofocus>
+                <button id="send-btn" class="send-btn">
+                    <img src="/assets/icons/send.png" alt="Send" class="send-icon">
+                </button>
+            </div>
+            
+            <div class="model-selectors" style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.75rem; width: 100%; padding: 0 0.5rem;">
+                <div style="display: flex; gap: 0.5rem;">
+                    <div class="chip-dropdown" id="provider-selector" style="position: relative; display: flex; align-items: center; gap: 0.35rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 9999px; padding: 0.35rem 0.75rem; cursor: pointer; transition: background 0.2s ease;" onmouseover="this.style.background='var(--bg-color)'" onmouseout="this.style.background='var(--card-bg)'" onclick="toggleDropdown('provider-menu')">
+                        <span id="provider-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Loading…</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+
+                        <div id="provider-menu" class="chip-menu" style="display: none; position: absolute; left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
+                    </div>
+
+                    <div class="chip-dropdown" id="model-selector" style="position: relative; display: flex; align-items: center; gap: 0.35rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 9999px; padding: 0.35rem 0.75rem; cursor: pointer; transition: background 0.2s ease;" onmouseover="this.style.background='var(--bg-color)'" onmouseout="this.style.background='var(--card-bg)'" onclick="toggleDropdown('model-menu')">
+                        <span id="model-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Loading…</span>
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+
+                        <div id="model-menu" class="chip-menu" style="display: none; position: absolute; left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
+                    </div>
+                </div>
+
+                <div class="chip-dropdown" id="effort-selector" style="position: relative; display: flex; align-items: center; gap: 0.35rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 9999px; padding: 0.35rem 0.75rem; cursor: pointer; transition: background 0.2s ease;" onmouseover="this.style.background='var(--bg-color)'" onmouseout="this.style.background='var(--card-bg)'" onclick="toggleDropdown('effort-menu')">
+                    <span id="effort-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Effort: Medium</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+
+                    <div id="effort-menu" class="chip-menu" style="display: none; position: absolute; right: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+                        <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: Low')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">Low</div>
+                        <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: Medium')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">Medium</div>
+                        <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: High')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">High</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/js/home.js"></script>
+
+    <style>
+        .chip-option:hover {
+            background-color: var(--bg-color);
+        }
+        .chip-dropdown.active {
+            border-color: #000000 !important;
+        }
+    </style>

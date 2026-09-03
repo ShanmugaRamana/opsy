@@ -1,0 +1,312 @@
+<style>
+    .hw-card-unavailable { opacity: 0.55; }
+</style>
+<div style="display: flex; width: 100%; min-height: 100vh;">
+    <!-- Left Section: 35% -->
+    <div style="width: 35%; border-right: 1px solid var(--border); padding: clamp(1.5rem, 4vh, 2.5rem); display: flex; flex-direction: column; align-items: stretch; background-color: var(--bg-color); height: 100vh; overflow-y: auto; box-sizing: border-box;">
+        <div style="margin-top: 0.5rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; gap: 0.75rem; margin: 0 0 0.5rem 0;">
+                <h3 style="font-family: 'Clash Display', sans-serif; font-size: clamp(1.2rem, 3vh, 1.5rem); font-weight: 500; color: var(--text-main); margin: 0;">Hardware Profile</h3>
+                <span id="os-badge" style="background-color: var(--card-bg); border: 1px solid var(--border); border-radius: 9999px; padding: 0.2rem 0.6rem; font-family: 'Inter', sans-serif; font-size: 0.7rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">macOS</span>
+            </div>
+            <p style="font-family: 'Playfair Display', serif; font-style: italic; font-size: clamp(0.85rem, 2vh, 0.95rem); color: var(--text-muted); margin: 0; line-height: 1.5;">Opsy has automatically analyzed your system to recommend the most optimal models for your machine.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: clamp(0.5rem, 2vh, 1rem); width: 100%;">
+            <!-- CPU -->
+            <div id="cpu-card" style="background-color: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: clamp(0.75rem, 2vh, 1.25rem); display: flex; flex-direction: column; gap: 0.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <span style="font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500;">CPU</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2" style="width: 16px; height: 16px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                </div>
+                <span id="cpu-usage-value" style="font-family: 'Clash Display', sans-serif; font-size: clamp(1.2rem, 3vh, 1.7rem); font-weight: 500; color: var(--text-main); margin-top: 0.25rem;">14<span style="font-size: 0.9rem; color: var(--text-muted); margin-left: 2px;">%</span></span>
+                <span id="cpu-sub-label" style="font-family: 'Inter', sans-serif; font-size: 0.7rem; color: var(--text-muted); margin-top: auto;">M1 Pro (8 Cores)</span>
+            </div>
+
+            <!-- RAM -->
+            <div id="ram-card" style="background-color: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: clamp(0.75rem, 2vh, 1.25rem); display: flex; flex-direction: column; gap: 0.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <span style="font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500;">RAM</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" style="width: 16px; height: 16px;"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><rect x="9" y="9" width="6" height="6"></rect><line x1="9" y1="1" x2="9" y2="4"></line><line x1="15" y1="1" x2="15" y2="4"></line><line x1="9" y1="20" x2="9" y2="23"></line><line x1="15" y1="20" x2="15" y2="23"></line><line x1="20" y1="9" x2="23" y2="9"></line><line x1="20" y1="14" x2="23" y2="14"></line><line x1="1" y1="9" x2="4" y2="9"></line><line x1="1" y1="14" x2="4" y2="14"></line></svg>
+                </div>
+                <span id="ram-usage-value" style="font-family: 'Clash Display', sans-serif; font-size: clamp(1.2rem, 3vh, 1.7rem); font-weight: 500; color: var(--text-main); margin-top: 0.25rem;">12<span style="font-size: 0.9rem; color: var(--text-muted); margin-left: 2px;">GB</span></span>
+                <span id="ram-sub-label" style="font-family: 'Inter', sans-serif; font-size: 0.7rem; color: var(--text-muted); margin-top: auto;">of 16 GB Total</span>
+            </div>
+
+            <!-- GPU -->
+            <div id="gpu-card" style="background-color: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: clamp(0.75rem, 2vh, 1.25rem); display: flex; flex-direction: column; gap: 0.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <span style="font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500;">GPU</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" style="width: 16px; height: 16px;"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 17 22 12"></polyline></svg>
+                </div>
+                <span id="gpu-usage-value" style="font-family: 'Clash Display', sans-serif; font-size: clamp(1.2rem, 3vh, 1.7rem); font-weight: 500; color: var(--text-main); margin-top: 0.25rem;">4<span style="font-size: 0.9rem; color: var(--text-muted); margin-left: 2px;">%</span></span>
+                <span id="gpu-sub-label" style="font-family: 'Inter', sans-serif; font-size: 0.7rem; color: var(--text-muted); margin-top: auto;">M1 Pro (14 Cores)</span>
+            </div>
+
+            <!-- Storage -->
+            <div id="storage-card" style="background-color: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: clamp(0.75rem, 2vh, 1.25rem); display: flex; flex-direction: column; gap: 0.25rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <span style="font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500;">Storage</span>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" style="width: 16px; height: 16px;"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                </div>
+                <span id="storage-value" style="font-family: 'Clash Display', sans-serif; font-size: clamp(1.2rem, 3vh, 1.7rem); font-weight: 500; color: var(--text-main); margin-top: 0.25rem;">245<span style="font-size: 0.9rem; color: var(--text-muted); margin-left: 2px;">GB</span></span>
+                <span id="storage-sub-label" style="font-family: 'Inter', sans-serif; font-size: 0.7rem; color: var(--text-muted); margin-top: auto;">Available Free</span>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: auto; padding-top: clamp(1rem, 3vh, 1.5rem);">
+            <h4 style="font-family: 'Clash Display', sans-serif; font-size: clamp(0.9rem, 2.5vh, 1.05rem); font-weight: 500; color: var(--text-main); margin: 0 0 0.25rem 0;">System Insights</h4>
+
+            <div id="system-insights-list" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                <div style="background-color: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: clamp(0.75rem, 2vh, 1rem); display: flex; gap: 0.75rem; align-items: flex-start;">
+                    <div style="background-color: rgba(16, 185, 129, 0.1); border-radius: 8px; padding: 0.4rem; display: flex; align-items: center; justify-content: center;">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2" style="width: 16px; height: 16px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 0.2rem;">
+                        <span style="font-family: 'Clash Display', sans-serif; font-size: 0.9rem; font-weight: 500; color: var(--text-main);">Optimal Quantization</span>
+                        <span style="font-family: 'Inter', sans-serif; font-size: 0.8rem; color: var(--text-muted); line-height: 1.4;">Based on 16GB RAM, we recommend 4-bit (Q4) quantization.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Section: 65% -->
+    <div style="width: 65%; display: flex; justify-content: center; overflow-y: auto; background-color: var(--bg-color);">
+        <div class="onboarding-container"
+            style="justify-content: flex-start; padding-top: clamp(3rem, 10vh, 15vh); padding-bottom: 3rem; width: 100%; max-width: 600px;">
+            <h2 class="onboarding-heading" style="margin-bottom: clamp(1.5rem, 4vh, 2.5rem); font-size: clamp(1.5rem, 4vh, 2rem);">Setup Models</h2>
+
+            <div class="setup-switcher"
+                style="position: relative; display: flex; background-color: var(--card-bg); padding: 0.3rem; border-radius: 9999px; border: 1px solid var(--border); margin-bottom: clamp(1.5rem, 4vh, 3rem);">
+                <div id="setup-slider"
+                    style="position: absolute; top: 0.3rem; bottom: 0.3rem; left: 0.3rem; width: 140px; background-color: #000000; border-radius: 9999px; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);">
+                </div>
+                <button class="setup-btn active"
+                    style="position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 140px; padding: 0.6rem 0; border-radius: 9999px; border: none; background: transparent; color: #ffffff; font-family: 'Clash Display', sans-serif; font-size: 1rem; cursor: pointer; transition: color 0.3s ease;">Local
+                    Models</button>
+                <button class="setup-btn"
+                    style="position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; width: 140px; padding: 0.6rem 0; border-radius: 9999px; border: none; background: transparent; color: var(--text-muted); font-family: 'Clash Display', sans-serif; font-size: 1rem; cursor: pointer; transition: color 0.3s ease;">Cloud
+                    Models</button>
+            </div>
+
+            <!-- Content for Local Models -->
+            <div id="local-models-content"
+                style="width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: stretch;">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; margin-top: clamp(1rem, 2vh, 1.5rem); width: 100%;">
+                    <p
+                        style="font-family: 'Clash Display', sans-serif; font-size: clamp(1rem, 2.5vh, 1.1rem); color: var(--text-main); margin: 0; font-weight: 500;">
+                        Select Provider</p>
+
+                    <div class="custom-dropdown" id="local-provider-dropdown" style="width: 180px;">
+                        <div class="custom-dropdown-trigger"
+                            style="background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem;">
+                            <span class="selected-text"
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.95rem; color: var(--text-main);">llama.cpp</span>
+                            <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m6 9 6 6 6-6" />
+                            </svg>
+                        </div>
+                        <div class="custom-dropdown-options" style="text-align: left; border-radius: 8px;">
+                            <div class="custom-option" data-value="llama-cpp"
+                                style="text-align: left; font-size: 0.95rem;">
+                                llama.cpp</div>
+                            <div class="custom-option" data-value="ollama"
+                                style="text-align: left; font-size: 0.95rem;">Ollama
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="models-list-llama-cpp" class="models-list"
+                    style="width: 100%; margin-top: clamp(1rem, 3vh, 2rem); display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Llama
+                                3 8B</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Default
+                                Chat Model</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Mistral
+                                7B</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Fast
+                                Reasoning</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Phi-3
+                                Mini</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Lightweight
+                                & Efficient</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">CodeLlama
+                                7B</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Code
+                                Assistant</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+                </div>
+
+                <div id="models-list-ollama" class="models-list"
+                    style="width: 100%; margin-top: clamp(1rem, 3vh, 2rem); display: none; flex-direction: column; gap: 0.75rem;">
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Llama
+                                3 (Ollama)</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">llama3:8b</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Mistral
+                                (Ollama)</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">mistral:7b</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Gemma
+                                2 (Ollama)</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">gemma2:9b</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+
+                    <div class="model-item"
+                        style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
+                        <div style="display: flex; flex-direction: column;">
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Qwen
+                                2 (Ollama)</span>
+                            <span
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">qwen2:7b</span>
+                        </div>
+                        <button
+                            style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: pointer; color: var(--text-main); transition: background-color 0.2s ease;"
+                            onmouseover="this.style.backgroundColor='var(--bg-color)'"
+                            onmouseout="this.style.backgroundColor='transparent'">Configure</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Content for Cloud Models -->
+            <div id="cloud-models-content"
+                style="width: 100%; max-width: 480px; display: none; flex-direction: column; align-items: stretch;">
+                <div
+                    style="display: flex; justify-content: space-between; align-items: center; margin-top: clamp(1rem, 2vh, 1.5rem); width: 100%;">
+                    <p
+                        style="font-family: 'Clash Display', sans-serif; font-size: clamp(1rem, 2.5vh, 1.1rem); color: var(--text-main); margin: 0; font-weight: 500;">
+                        Select Provider</p>
+
+                    <div class="custom-dropdown" id="cloud-provider-dropdown" style="width: 180px;">
+                        <div class="custom-dropdown-trigger"
+                            style="background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 1rem;">
+                            <span class="selected-text"
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.95rem; color: var(--text-muted);">Select
+                                Provider</span>
+                            <svg class="dropdown-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m6 9 6 6 6-6" />
+                            </svg>
+                        </div>
+                        <div class="custom-dropdown-options" style="text-align: left; border-radius: 8px;">
+                            <div class="custom-option" data-value="anthropic"
+                                style="text-align: left; font-size: 0.95rem;">
+                                Anthropic</div>
+                            <div class="custom-option" data-value="openai"
+                                style="text-align: left; font-size: 0.95rem;">
+                                OpenAI</div>
+                            <div class="custom-option" data-value="gemini"
+                                style="text-align: left; font-size: 0.95rem;">
+                                Gemini</div>
+                            <div class="custom-option" data-value="groq" style="text-align: left; font-size: 0.95rem;">
+                                Groq</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="cloud-api-key-container"
+                    style="width: 100%; margin-top: clamp(1rem, 3vh, 2rem); display: none; flex-direction: column; gap: 0.75rem;">
+                    <p id="cloud-api-key-label"
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.95rem; color: var(--text-main); margin: 0; text-align: left;">
+                        API Key</p>
+                    <div style="display: flex; gap: 0.5rem; align-items: center;">
+                        <input type="password" id="cloud-api-key-input" placeholder="Enter your API key"
+                            style="flex: 1; background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; color: var(--text-main); font-family: 'Clash Display', sans-serif; font-size: 0.95rem; outline: none; transition: border-color 0.2s ease;"
+                            onfocus="this.style.borderColor='var(--text-main)'"
+                            onblur="this.style.borderColor='var(--border)'">
+                        <button id="save-api-key-btn"
+                            style="background: var(--text-main); color: var(--bg-color); border: none; border-radius: 8px; padding: 0.75rem 1.5rem; font-family: 'Clash Display', sans-serif; font-size: 0.95rem; font-weight: 500; cursor: pointer; transition: opacity 0.2s ease;"
+                            onmouseover="this.style.opacity='0.9'" onmouseout="this.style.opacity='1'">Verify</button>
+                    </div>
+                    <p id="cloud-api-key-error" style="display:none;color:#dc2626;margin:0;font-size:0.85rem;"></p>
+                    <div id="setup-complete-message" style="display:none; padding: 0.75rem 1rem; border-radius: 8px; background-color: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #10b981; font-family: 'Clash Display', sans-serif; font-size: 0.9rem; text-align: center;">Setup complete — taking you home…</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/js/setup.js"></script>
