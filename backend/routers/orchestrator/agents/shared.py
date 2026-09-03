@@ -15,6 +15,7 @@ import re
 
 import httpx
 
+from routers.models.local.environment import LOCAL_CONTEXT_LENGTH, LOCAL_TIMEOUT
 from routers.orchestrator import permissions
 from routers.orchestrator.ratelimit import MAX_TRANSIENT_RETRIES, transient_delay, wait_before_transient_retry
 from routers.orchestrator.tools.command.tool import validate_argv
@@ -275,10 +276,13 @@ def gemini_command_tool(primary_tool):
 # Kept here because it carries no knowledge of any particular agent - only the transport. Each agent's
 # own `_run_ollama` loop (system prompt, report tag, tool dispatch, nudges, final round) stays in its
 # own tool_clients.py, exactly like the OpenAI-compatible round does.
-OLLAMA_CONTEXT_LENGTH = 16384
+#
+# The context length and timeout come from local/environment.py, the one place that policy is set, so
+# a streaming tool round and the non-streaming client in clients.py can never disagree about how a
+# local model is called.
 
 
-async def ollama_round(base_url, model_id, messages, tools, result, read_timeout=600.0):
+async def ollama_round(base_url, model_id, messages, tools, result):
     """Streams one round against Ollama's /api/chat. Fills `result` with `text` (the round's
     narration) and `tool_calls` (a list of {id, name, arguments}, `arguments` re-serialized as a JSON
     string so the rest of an agent's loop can `json.loads` it exactly like the OpenAI-shaped agents
@@ -292,12 +296,10 @@ async def ollama_round(base_url, model_id, messages, tools, result, read_timeout
         "messages": messages,
         "stream": True,
         "keep_alive": "10m",
-        "options": {"num_ctx": OLLAMA_CONTEXT_LENGTH},
+        "options": {"num_ctx": LOCAL_CONTEXT_LENGTH},
     }
     if tools:
         payload["tools"] = tools
-
-    timeout = httpx.Timeout(connect=5.0, read=read_timeout, write=30.0, pool=5.0)
 
     for attempt in range(MAX_TRANSIENT_RETRIES + 1):
         buffered = ""
@@ -305,7 +307,7 @@ async def ollama_round(base_url, model_id, messages, tools, result, read_timeout
         tool_calls = []
 
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=LOCAL_TIMEOUT) as client:
                 async with client.stream("POST", f"{base_url}/api/chat", json=payload) as response:
                     if response.status_code >= 400:
                         body = (await response.aread()).decode(errors="replace")

@@ -34,8 +34,20 @@ def is_running():
     return _state is not None and _state["status"] == STATUS_DOWNLOADING
 
 
-def begin(model_key, model_ref, display_name):
+def try_begin(model_key, model_ref, display_name):
+    """Claims the single download slot, returning the new cancel event - or None if a download is
+    already running.
+
+    Called by the request handler, before the task is created, and deliberately synchronous: the
+    check and the claim happen with no await between them, so two near-simultaneous POSTs cannot both
+    pass. Claiming inside the task body instead would leave a window, since a freshly created task
+    does not run until a later loop tick - by which time a second request can already have looked at
+    an unclaimed slot and started its own pull, orphaning the first one's cancel event.
+    """
     global _state, _cancel_event, _last_publish_at
+    if is_running():
+        return None
+
     _state = {
         "model_key": model_key,
         "model_ref": model_ref,

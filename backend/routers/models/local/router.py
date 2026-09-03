@@ -101,8 +101,20 @@ async def start_download_route(payload: DownloadStartRequest):
     if not env["running"]:
         raise HTTPException(status_code=503, detail=env["detail"] or "Ollama is not reachable")
 
+    # The check above is only a fast path that answers before the environment round trip; this is the
+    # one that actually decides. It has to be re-taken here because `await check_environment()` hands
+    # the loop to any other request that got as far as the same point, and it has to sit immediately
+    # next to `create_task` with no await between them - see download_state.try_begin.
+    cancel_event = download_state.try_begin(payload.model_key, entry["tag"], entry["display_name"])
+    if cancel_event is None:
+        active = download_state.get_snapshot()
+        raise HTTPException(
+            status_code=409,
+            detail=f"A download is already running: {active['display_name']}",
+        )
+
     logger.info(f"local-models - starting download: {payload.model_key}")
-    _download_task = asyncio.create_task(run_download(payload.model_key))
+    _download_task = asyncio.create_task(run_download(payload.model_key, cancel_event))
 
     return {"model_key": payload.model_key, "model_ref": entry["tag"], "display_name": entry["display_name"]}
 

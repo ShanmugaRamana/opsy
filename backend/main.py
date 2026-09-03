@@ -59,8 +59,21 @@ app.include_router(command_tools_router)
 @app.on_event("startup")
 def _clear_stale_local_downloads():
     """A `downloading` row left over from a process that died mid-pull would otherwise look like a
-    live progress bar that will never move - see local/queries.py:clear_stale_downloads."""
-    conn = get_connection()
+    live progress bar that will never move - see local/queries.py:clear_stale_downloads.
+
+    Connecting is inside the guard, not before it: an exception escaping a startup handler aborts the
+    whole boot ("Application startup failed. Exiting."), and `get_connection()` raises when the
+    database is unreachable. This cleanup is a nice-to-have, so a database that is briefly down must
+    cost us this one housekeeping pass, not the entire backend - every route opens its own connection
+    lazily and reports a 503 for itself."""
+    try:
+        conn = get_connection()
+    except Exception:
+        logging.getLogger("local-models").warning(
+            "could not connect to check for stale downloads on startup", exc_info=True
+        )
+        return
+
     try:
         clear_stale_downloads(conn)
         conn.commit()

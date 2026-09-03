@@ -4,6 +4,7 @@ import psycopg2.extras
 
 from routers.models.queries import CREATE_MODELS_TABLE_SQL
 from .catalog import BACKEND, get_entry
+from .environment import LOCAL_CONTEXT_LENGTH
 
 logger = logging.getLogger("local-models")
 
@@ -17,6 +18,10 @@ CREATE TABLE IF NOT EXISTS local_models (
     params_b NUMERIC(5,2),
     quantization TEXT,
     size_bytes BIGINT,
+    -- Recorded for provenance, not read back: every call sets num_ctx from
+    -- local/environment.py:LOCAL_CONTEXT_LENGTH, which is the same for every model, so looking this
+    -- up per request would be a database round trip for a constant. It is written from that same
+    -- constant so the two can't disagree about what a downloaded model was registered with.
     context_length INTEGER NOT NULL,
     supports_tools BOOLEAN NOT NULL DEFAULT TRUE,
     status TEXT NOT NULL,
@@ -30,11 +35,6 @@ CREATE TABLE IF NOT EXISTS local_models (
 STATUS_DOWNLOADING = "downloading"
 STATUS_READY = "ready"
 STATUS_FAILED = "failed"
-
-# Tool loops run 4 rounds against a full command schema plus accumulating tool output - this is set
-# generously rather than trimmed, per the standing rule against shrinking what a model is told its
-# tools do.
-DEFAULT_CONTEXT_LENGTH = 16384
 
 
 def _ensure_tables(conn):
@@ -63,7 +63,7 @@ def start_download(conn, model_key):
             """,
             (
                 BACKEND, model_key, entry["tag"], entry["display_name"], entry["params_b"],
-                entry["quantization"], DEFAULT_CONTEXT_LENGTH, STATUS_DOWNLOADING,
+                entry["quantization"], LOCAL_CONTEXT_LENGTH, STATUS_DOWNLOADING,
             ),
         )
 

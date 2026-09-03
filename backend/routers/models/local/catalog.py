@@ -5,8 +5,13 @@
 # above 15B parameters, regardless of how much RAM/VRAM a machine has. `local/recommend.py` filters the
 # catalog against it, and this module asserts every entry respects it, so a future addition can't
 # silently break the rule.
+#
+# MAX_CATALOG_SIZE is the matching rule for the other direction: the setup page shows this catalog as
+# a short, considered list, not a long one to scroll - four well-spaced tiers, not a model per possible
+# machine. Also asserted below, for the same reason.
 
 MAX_PARAMS_B = 15.0
+MAX_CATALOG_SIZE = 4
 
 BACKEND = "ollama"
 
@@ -21,28 +26,18 @@ LOCAL_MODEL_CATALOG = {
         "size_gb": 1.4,
         "tool_calling": "limited",
     },
-    "llama-3.2-3b": {
-        "tag": "llama3.2:3b",
-        "display_name": "Llama 3.2 3B",
-        "params_b": 3.0,
-        "quantization": "Q4_K_M",
-        "size_gb": 2.0,
-        "tool_calling": "limited",
-    },
+    # No Llama-family entries: Ollama's Llama chat templates only fill in tool_calls reliably with
+    # stream=false, and every call in this app - the agents' tool loops (shared.ollama_round) and the
+    # plain classify/title/chat path (clients.py:_call_ollama's own stream flag aside, keeping one
+    # policy is what matters) - is built around stream=true. A Llama model here would either silently
+    # drop its tool calls mid-turn or need a special-cased non-streaming path, neither of which is
+    # worth it for a model this catalog already has two better tool-calling options around.
     "qwen3-4b": {
         "tag": "qwen3:4b",
         "display_name": "Qwen3 4B",
         "params_b": 4.0,
         "quantization": "Q4_K_M",
         "size_gb": 2.6,
-        "tool_calling": "good",
-    },
-    "mistral-7b": {
-        "tag": "mistral:7b",
-        "display_name": "Mistral 7B",
-        "params_b": 7.0,
-        "quantization": "Q4_K_M",
-        "size_gb": 4.4,
         "tool_calling": "good",
     },
     "qwen3-8b": {
@@ -66,6 +61,12 @@ LOCAL_MODEL_CATALOG = {
 for _key, _entry in LOCAL_MODEL_CATALOG.items():
     if _entry["params_b"] > MAX_PARAMS_B:
         raise ValueError(f"catalog entry {_key!r} is {_entry['params_b']}B, over the {MAX_PARAMS_B}B cap")
+
+if len(LOCAL_MODEL_CATALOG) > MAX_CATALOG_SIZE:
+    raise ValueError(
+        f"catalog has {len(LOCAL_MODEL_CATALOG)} entries, over the {MAX_CATALOG_SIZE}-model cap - "
+        "trim it rather than raising the cap"
+    )
 
 
 def get_entry(model_key):

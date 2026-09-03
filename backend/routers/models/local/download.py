@@ -74,23 +74,22 @@ async def _try_mark_failed(model_key, error):
         logger.exception(f"local-models - could not persist failure for {model_key}")
 
 
-async def run_download(model_key):
+async def run_download(model_key, cancel_event):
     """The background task body. Every exit path calls exactly one of download_state.finish_done /
-    finish_error, mirroring the terminal-event guarantee the agent sockets already rely on."""
+    finish_error, mirroring the terminal-event guarantee the agent sockets already rely on.
+
+    `cancel_event` is the one the caller got back from download_state.try_begin(): the slot is
+    claimed before this task is even created, so nothing here - including the very first DB write, or
+    a bad model_key - can fail without a download_state record to report itself against. A WS client
+    that connects while that record is missing gets "No download in progress" and, per download.js,
+    redirects straight back to /setup: exactly the "the download page doesn't open" symptom, and
+    silently, since this is a background asyncio task with no request/response cycle to surface an
+    unhandled exception through. Hence the whole body sits inside the try below.
+    """
     entry = get_entry(model_key)
-    if entry is None:
-        raise ValueError(f"unknown local model key: {model_key}")
-
-    tag = entry["tag"]
-    display_name = entry["display_name"]
-
-    # download_state must exist before anything else in this task can fail - including the very
-    # first DB write - or a failure here has no download_state record to report itself against. A WS
-    # client that connects while that record is missing gets "No download in progress" and, per
-    # download.js, redirects straight back to /setup: exactly the "the download page doesn't open"
-    # symptom, and silently, since this is a background asyncio task with no request/response cycle
-    # to surface an unhandled exception through.
-    cancel_event = download_state.begin(model_key, tag, display_name)
+    # Only for the log lines in the failure paths below - the real lookup is inside the try, so an
+    # unknown key is reported through download_state rather than raised into a bare task.
+    tag = entry["tag"] if entry else model_key
 
     digest_totals = {}
     digest_completed = {}
@@ -98,6 +97,9 @@ async def run_download(model_key):
     time_at_last_tick = time.monotonic()
 
     try:
+        if entry is None:
+            raise ValueError(f"unknown local model key: {model_key}")
+
         await anyio.to_thread.run_sync(_start_download_row_sync, model_key)
 
         logger.info(f"local-models - pulling {tag}")
