@@ -211,9 +211,22 @@ const chatLog = document.getElementById('chat-log');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 
+function updateScrollFade() {
+    const scrollArea = document.getElementById('chat-scroll-area');
+    if (!scrollArea) return;
+    if (scrollArea.scrollHeight > scrollArea.clientHeight) {
+        scrollArea.classList.add('has-scroll');
+    } else {
+        scrollArea.classList.remove('has-scroll');
+    }
+}
+
 function scrollChatToBottom() {
     const scrollArea = document.getElementById('chat-scroll-area');
-    if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
+    if (scrollArea) {
+        scrollArea.scrollTop = scrollArea.scrollHeight;
+        updateScrollFade();
+    }
 }
 
 function appendMessage(role, text) {
