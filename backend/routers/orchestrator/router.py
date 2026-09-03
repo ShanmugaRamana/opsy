@@ -56,6 +56,7 @@ async def run(payload: OrchestratorRequest):
         content=final_event.get("content"),
         raw_xml=final_event.get("raw_xml"),
         disk_report=final_event.get("disk_report"),
+        process_report=final_event.get("process_report"),
         commands_run=final_event.get("commands_run", []),
     )
 

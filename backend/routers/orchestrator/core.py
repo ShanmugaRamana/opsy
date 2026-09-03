@@ -11,6 +11,7 @@ from core.db import get_connection
 from routers.byok.queries import get_key
 from routers.byok.schemas import VALID_PROVIDERS
 
+from .agents.router import AGENT_WS_PATHS
 from .classify import classify_intent
 from .clients import ProviderCallError, call_provider
 from .prompts import BASE_SYSTEM_PROMPT
@@ -30,15 +31,16 @@ def _get_key_sync(provider):
         conn.close()
 
 
-async def _relay_disk_agent(provider, api_key, model_id, message):
-    """Calls the disk agent over its real WS route (loopback) rather than importing and calling it
-    directly, relaying every event it streams back unchanged.
+async def _relay_agent(mode, provider, api_key, model_id, message):
+    """Calls a specialist agent over its real WS route (loopback) rather than importing and calling
+    it directly, relaying every event it streams back unchanged.
 
     A socket that closes mid-turn would otherwise end the relay silently, leaving the client with a
     collapsed trace and no answer, so a close without a terminal event becomes an error."""
+    ws_path = AGENT_WS_PATHS[mode]
     saw_terminal = False
     try:
-        async with websockets.connect(f"{INTERNAL_WS_BASE}/linux/agents/disk/ws") as ws:
+        async with websockets.connect(f"{INTERNAL_WS_BASE}{ws_path}") as ws:
             await ws.send(json.dumps({
                 "provider": provider,
                 "api_key": api_key,
@@ -51,14 +53,18 @@ async def _relay_disk_agent(provider, api_key, model_id, message):
                     saw_terminal = True
                 yield event
     except (OSError, websockets.exceptions.WebSocketException) as e:
-        logger.error(f"disk agent route unreachable: {e}")
+        logger.error(f"{mode} agent route unreachable: {e}")
         if not saw_terminal:
-            yield {"type": "error", "status": 502, "detail": f"disk agent unreachable: {e}"}
+            yield {"type": "error", "status": 502, "detail": f"{mode} agent unreachable: {e}"}
         return
 
     if not saw_terminal:
-        logger.error("disk agent socket closed without a terminal event")
-        yield {"type": "error", "status": 502, "detail": "disk agent closed without returning a result"}
+        logger.error(f"{mode} agent socket closed without a terminal event")
+        yield {
+            "type": "error",
+            "status": 502,
+            "detail": f"{mode} agent closed without returning a result",
+        }
 
 
 async def run_orchestrator(request: OrchestratorRequest):
@@ -96,8 +102,10 @@ async def run_orchestrator(request: OrchestratorRequest):
 
     yield {"type": "classified", "mode": mode}
 
-    if mode == "disk":
-        async for event in _relay_disk_agent(request.provider, api_key, request.model_id, request.message):
+    if mode in AGENT_WS_PATHS:
+        async for event in _relay_agent(
+            mode, request.provider, api_key, request.model_id, request.message
+        ):
             if event["type"] == "error":
                 event.setdefault("status", 502)
             yield event

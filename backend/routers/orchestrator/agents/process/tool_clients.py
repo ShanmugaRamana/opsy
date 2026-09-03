@@ -1,3 +1,15 @@
+"""Per-provider tool loops for the process agent.
+
+Written against the disk agent's `tool_clients.py`, which is the reference implementation for this
+pattern: four rounds of tool calls, a nudge for a model that narrates without acting, a final round
+with the tools withheld to force the report out, rate-limit and transient retries that never replay a
+round which already streamed, and exactly one terminal event on every exit path.
+
+The loops are deliberately not shared with the disk agent. Four providers' streaming and tool-calling
+formats differ enough that a single parameterised loop would be a worse abstraction than two honest
+copies, and the disk agent is the stable reference the two are checked against. What is shared lives
+in `agents/shared.py`.
+"""
 import asyncio
 import json
 import logging
@@ -19,23 +31,29 @@ from routers.orchestrator.ratelimit import (
 from routers.orchestrator.agents import shared
 from routers.orchestrator.agents.shared import COMMAND_TOOL_NAME
 from routers.orchestrator.schemas import CommandRun
-from routers.orchestrator.tools.disk.tool import DISK_COMMANDS, command_label, tool_schema_properties
-
-from .prompt import DISK_AGENT_SYSTEM_PROMPT
-from .xml import parse_disk_report
-
-logger = logging.getLogger("orchestrator.disk")
-
-AGENT_NAME = "disk"
-REPORT_TAG = "disk_report"
-TOOL_NAME = "run_disk_command"
-TOOL_DESCRIPTION = (
-    "Run one read-only diagnostic command about disk or storage and return its output. "
-    "Some commands accept a path (a directory, or a device such as /dev/sda)."
+from routers.orchestrator.tools.process.tool import (
+    PROCESS_COMMANDS,
+    command_label,
+    tool_schema_properties,
 )
-PATH_DESCRIPTION = (
-    "Optional target for commands that accept one: an absolute directory path, or a device path for "
-    "drive-health commands. Omit it to use the command's default."
+
+from .prompt import PROCESS_AGENT_SYSTEM_PROMPT
+from .xml import parse_process_report
+
+logger = logging.getLogger("orchestrator.process")
+
+AGENT_NAME = "process"
+REPORT_TAG = "process_report"
+TOOL_NAME = "run_process_command"
+TOOL_DESCRIPTION = (
+    "Run one read-only diagnostic command about running applications, processes, load or services "
+    "and return its output. Some commands take an argument: a numeric PID, a program name, a systemd "
+    "unit name, or an absolute path. For 'which apps are running', use running_apps."
+)
+ARG_DESCRIPTION = (
+    "Optional argument for commands that take one. The command's own description says which kind it "
+    "wants: a numeric PID, a program name such as firefox, a unit name such as bluetooth.service, or "
+    "an absolute path. Omit it for commands that take no argument."
 )
 MAX_TOOL_ROUNDS = 4
 # Nudges do not consume a tool round, so they need their own ceiling to bound the turn.
@@ -48,6 +66,8 @@ INTERNAL_API_BASE = shared.INTERNAL_API_BASE
 
 FINAL_ROUND_MESSAGE = shared.final_round_message(REPORT_TAG)
 NUDGE_MESSAGE = shared.nudge_message(TOOL_NAME, REPORT_TAG)
+
+_narration_chunk = shared.narration_chunk
 
 
 def _has_report(text):
@@ -64,15 +84,15 @@ def _command_enum_description():
     return "; ".join(parts)
 
 
-async def _call_disk_tool(command_id, path=None):
-    """Calls the disk tool over its real HTTP route (loopback) rather than the function directly.
+async def _call_process_tool(command_id, arg=None):
+    """Calls the process tool over its real HTTP route (loopback) rather than the function directly.
 
     Retries transient failures, because the alternative is handing the model an error string it will
     reason about as though the machine had actually reported that - a dropped loopback connection
-    must not become a finding about the user's disk. Never raises: a failure that survives the
-    retries becomes an error string, which is an honest answer the model can report."""
-    params = {"path": path} if path else None
-    url = f"{INTERNAL_API_BASE}/linux/tools/disk/{command_id}"
+    must not become a finding about what the user has running. Never raises: a failure that survives
+    the retries becomes an error string, which is an honest answer the model can report."""
+    params = {"arg": arg} if arg else None
+    url = f"{INTERNAL_API_BASE}/linux/tools/process/{command_id}"
 
     for attempt in range(MAX_TOOL_RETRIES + 1):
         try:
@@ -86,7 +106,7 @@ async def _call_disk_tool(command_id, path=None):
 
             if is_transient_status(response.status_code) and attempt < MAX_TOOL_RETRIES:
                 logger.warning(
-                    f"disk tool '{command_id}' returned {response.status_code}, retry {attempt + 1}"
+                    f"process tool '{command_id}' returned {response.status_code}, retry {attempt + 1}"
                 )
                 await asyncio.sleep(transient_delay(attempt))
                 continue
@@ -95,24 +115,26 @@ async def _call_disk_tool(command_id, path=None):
             return response.json()["output"]
         except (httpx.HTTPError, KeyError, ValueError) as e:
             if attempt < MAX_TOOL_RETRIES:
-                logger.warning(f"disk tool '{command_id}' failed ({e}), retry {attempt + 1}")
+                logger.warning(f"process tool '{command_id}' failed ({e}), retry {attempt + 1}")
                 await asyncio.sleep(transient_delay(attempt))
                 continue
-            return f"Error calling disk tool '{command_id}': {e}"
+            return f"Error calling process tool '{command_id}': {e}"
 
-    return f"Error calling disk tool '{command_id}': exhausted {MAX_TOOL_RETRIES} retries"
+    return f"Error calling process tool '{command_id}': exhausted {MAX_TOOL_RETRIES} retries"
 
 
-async def _run_tool(command_id, path=None):
+async def _run_tool(command_id, arg=None):
     label = command_label(command_id)
-    yield {"type": "tool_call", "agent": AGENT_NAME, "command": command_id, "label": label, "path": path}
-    output = await _call_disk_tool(command_id, path)
+    # The trace panel keys rows on `path`, so the argument travels under that name regardless of
+    # whether it is a PID, a unit or a directory.
+    yield {"type": "tool_call", "agent": AGENT_NAME, "command": command_id, "label": label, "path": arg}
+    output = await _call_process_tool(command_id, arg)
     yield {
         "type": "tool_result",
         "agent": AGENT_NAME,
         "command": command_id,
         "label": label,
-        "path": path,
+        "path": arg,
         "output": output,
     }
 
@@ -127,7 +149,7 @@ async def _dispatch_tool(name, args):
             yield event
         return
 
-    async for event in _run_tool(args.get("command"), args.get("path")):
+    async for event in _run_tool(args.get("command"), args.get("arg")):
         yield event
 
 
@@ -146,23 +168,20 @@ def _record_command(commands_run, name, args, output):
         CommandRun(
             command=str(command_id),
             label=command_label(command_id),
-            path=args.get("path"),
+            path=args.get("arg"),
             output=output,
         )
     )
 
 
-def _final_event(disk_report, thinking, commands_run):
+def _final_event(process_report, thinking, commands_run):
     return {
         "type": "final",
-        "mode": "disk",
+        "mode": AGENT_NAME,
         "thinking": thinking.strip() or None,
-        "disk_report": disk_report.model_dump(),
+        "process_report": process_report.model_dump(),
         "commands_run": [cr.model_dump() for cr in commands_run],
     }
-
-
-_narration_chunk = shared.narration_chunk
 
 
 # ---- Anthropic ----
@@ -177,10 +196,10 @@ def _anthropic_tool_schema():
                 "properties": {
                     "command": {
                         "type": "string",
-                        "enum": list(DISK_COMMANDS.keys()),
+                        "enum": list(PROCESS_COMMANDS.keys()),
                         "description": _command_enum_description(),
                     },
-                    "path": {"type": "string", "description": PATH_DESCRIPTION},
+                    "arg": {"type": "string", "description": ARG_DESCRIPTION},
                 },
                 "required": ["command"],
             },
@@ -193,7 +212,7 @@ async def _anthropic_round(client, model_id, messages, tools, result):
     kwargs = {
         "model": model_id,
         "max_tokens": MAX_TOKENS,
-        "system": DISK_AGENT_SYSTEM_PROMPT,
+        "system": PROCESS_AGENT_SYSTEM_PROMPT,
         "messages": messages,
     }
     if tools:
@@ -313,7 +332,7 @@ async def _run_anthropic(api_key, model_id, message):
         messages.append({"role": "user", "content": tool_results})
         round_index += 1
 
-    yield _final_event(parse_disk_report(final_text), narration, commands_run)
+    yield _final_event(parse_process_report(final_text), narration, commands_run)
 
 
 # ---- OpenAI / Groq (OpenAI-compatible) ----
@@ -330,10 +349,10 @@ def _openai_tool_schema():
                     "properties": {
                         "command": {
                             "type": "string",
-                            "enum": list(DISK_COMMANDS.keys()),
+                            "enum": list(PROCESS_COMMANDS.keys()),
                             "description": _command_enum_description(),
                         },
-                        "path": {"type": "string", "description": PATH_DESCRIPTION},
+                        "arg": {"type": "string", "description": ARG_DESCRIPTION},
                     },
                     "required": ["command"],
                 },
@@ -450,7 +469,7 @@ async def _openai_round(base_url, api_key, model_id, messages, tools, result):
 async def _run_openai_compatible(base_url, api_key, model_id, message):
     tools = _openai_tool_schema()
     messages = [
-        {"role": "system", "content": DISK_AGENT_SYSTEM_PROMPT},
+        {"role": "system", "content": PROCESS_AGENT_SYSTEM_PROMPT},
         {"role": "user", "content": message},
     ]
     commands_run = []
@@ -533,7 +552,7 @@ async def _run_openai_compatible(base_url, api_key, model_id, message):
 
         round_index += 1
 
-    yield _final_event(parse_disk_report(final_text), narration, commands_run)
+    yield _final_event(parse_process_report(final_text), narration, commands_run)
 
 
 async def _run_openai(api_key, model_id, message):
@@ -563,10 +582,10 @@ def _gemini_tool_schema():
                     "properties": {
                         "command": {
                             "type": "STRING",
-                            "enum": list(DISK_COMMANDS.keys()),
+                            "enum": list(PROCESS_COMMANDS.keys()),
                             "description": _command_enum_description(),
                         },
-                        "path": {"type": "STRING", "description": PATH_DESCRIPTION},
+                        "arg": {"type": "STRING", "description": ARG_DESCRIPTION},
                     },
                     "required": ["command"],
                 },
@@ -578,7 +597,7 @@ def _gemini_tool_schema():
 
 async def _gemini_round(url, api_key, contents, tools, result):
     payload = {
-        "system_instruction": {"parts": [{"text": DISK_AGENT_SYSTEM_PROMPT}]},
+        "system_instruction": {"parts": [{"text": PROCESS_AGENT_SYSTEM_PROMPT}]},
         "contents": contents,
     }
     if tools:
@@ -743,7 +762,7 @@ async def _run_gemini(api_key, model_id, message):
         contents.append({"role": "user", "parts": response_parts})
         round_index += 1
 
-    yield _final_event(parse_disk_report(final_text), narration, commands_run)
+    yield _final_event(parse_process_report(final_text), narration, commands_run)
 
 
 _AGENTS = {
@@ -754,7 +773,7 @@ _AGENTS = {
 }
 
 
-async def run_disk_agent(provider, api_key, model_id, message):
+async def run_process_agent(provider, api_key, model_id, message):
     """Streams the agent's events, guaranteeing the stream ends with exactly one terminal event.
 
     The client collapses its trace panel when the turn ends, so a run that stops without a "final"
@@ -772,11 +791,11 @@ async def run_disk_agent(provider, api_key, model_id, message):
                 saw_terminal = True
             yield event
     except Exception as e:
-        logger.exception("disk agent failed")
+        logger.exception("process agent failed")
         if not saw_terminal:
-            yield {"type": "error", "status": 502, "detail": f"disk agent failed: {e}"}
+            yield {"type": "error", "status": 502, "detail": f"process agent failed: {e}"}
         return
 
     if not saw_terminal:
-        logger.error("disk agent finished without a terminal event")
-        yield {"type": "error", "status": 502, "detail": "disk agent produced no result"}
+        logger.error("process agent finished without a terminal event")
+        yield {"type": "error", "status": 502, "detail": "process agent produced no result"}

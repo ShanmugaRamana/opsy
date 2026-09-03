@@ -44,6 +44,52 @@ class DiskReport(BaseModel):
     salvaged: bool = False
 
 
+class AppEntry(BaseModel):
+    """One application, not one process. A browser's renderer, GPU and crashpad processes are summed
+    into a single entry, which is what makes "which apps are running" answerable."""
+
+    name: str
+    cpu_percent: float | None = None
+    memory_mb: float | None = None
+    processes: int | None = None
+    uptime: str | None = None
+    # foreground | background | unknown. "unknown" is required, not optional, whenever window data
+    # was unavailable - claiming "background" on a Wayland session would be inventing an observation.
+    state: str | None = None
+    detail: str | None = None
+
+
+class ProcessEntry(BaseModel):
+    pid: int | None = None
+    name: str
+    cpu_percent: float | None = None
+    memory_mb: float | None = None
+    state: str | None = None
+
+
+class LoadSummary(BaseModel):
+    cpu_percent: float | None = None
+    memory_percent: float | None = None
+    load_1m: float | None = None
+    cores: int | None = None
+    severity: str | None = None
+
+
+class ProcessReport(BaseModel):
+    summary: str
+    explanation: str | None = None
+    # full | degraded. Mirrors what the tool reported about this session's window data, so the client
+    # can state the limitation instead of quietly rendering a weaker answer as a confident one.
+    confidence: str | None = None
+    apps: list[AppEntry] = []
+    processes: list[ProcessEntry] = []
+    load: LoadSummary | None = None
+    facts: list[Fact] = []
+    standout: str | None = None
+    suggestion: str | None = None
+    salvaged: bool = False
+
+
 class OrchestratorResponse(BaseModel):
     provider: str
     model_id: str
@@ -52,4 +98,5 @@ class OrchestratorResponse(BaseModel):
     content: str | None = None
     raw_xml: str | None = None
     disk_report: DiskReport | None = None
+    process_report: ProcessReport | None = None
     commands_run: list[CommandRun] = []

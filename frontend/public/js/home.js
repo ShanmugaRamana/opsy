@@ -258,6 +258,7 @@ const WS_URL = `${BACKEND_URL.replace('http', 'ws')}/linux/orchestrator/ws`;
 let orchestratorSocket = null;
 
 const SEVERITY_COLORS = { plenty: '#2ecc71', moderate: '#f1c40f', tight: '#e67e22', critical: '#e74c3c' };
+const LOAD_SEVERITY_COLORS = { idle: '#2ecc71', normal: '#2ecc71', busy: '#e67e22', overloaded: '#e74c3c' };
 
 // The live trace for the turn in flight: a panel that exists from the first event, updates its own
 // header as work happens, and collapses once the answer lands.
@@ -548,18 +549,45 @@ function appendBlock(text, styles) {
     return block;
 }
 
+// Say plainly when the answer is recovered prose rather than a real report, so a degraded answer is
+// never mistaken for a confident one. Shared across every report type: the meaning doesn't change
+// depending on which agent produced the reply.
+function appendSalvagedNotice() {
+    appendBlock(
+        'The model did not return a structured report. This is the closest answer recovered from its reply — the trace above shows what was actually checked.',
+        'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.7; font-style: italic;',
+    );
+}
+
+function appendFactsTable(facts) {
+    if (!facts || facts.length === 0) return;
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse;';
+    facts.forEach((fact) => {
+        const tr = document.createElement('tr');
+        const label = document.createElement('td');
+        label.style.cssText = 'padding: 0.15rem 0.9rem 0.15rem 0; opacity: 0.7; vertical-align: top;';
+        label.innerText = fact.label;
+        const value = document.createElement('td');
+        value.style.cssText = 'padding: 0.15rem 0; word-break: break-word;';
+        value.innerText = fact.value;
+        tr.appendChild(label);
+        tr.appendChild(value);
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+function formatMemoryMb(mb) {
+    if (mb == null) return '';
+    return mb >= 1024 ? `${(mb / 1024).toFixed(1)} GB` : `${Math.round(mb)} MB`;
+}
+
 function renderDiskReport(report) {
     if (!report) return;
 
     if (report.summary) appendMessage('assistant', report.summary);
-    // Say plainly when the answer is recovered prose rather than a real report, so a degraded
-    // answer is never mistaken for a confident one.
-    if (report.salvaged) {
-        appendBlock(
-            'The model did not return a structured report. This is the closest answer recovered from its reply — the trace above shows what was actually checked.',
-            'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.7; font-style: italic;',
-        );
-    }
+    if (report.salvaged) appendSalvagedNotice();
     if (report.explanation) {
         appendBlock(report.explanation, 'font-size: 0.82rem; line-height: 1.5; padding: 0 0.9rem; opacity: 0.9;');
     }
@@ -582,23 +610,7 @@ function renderDiskReport(report) {
         appendBlock(parts.join(' · '), 'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.75;');
     }
 
-    if (report.facts && report.facts.length > 0) {
-        const table = document.createElement('table');
-        table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse;';
-        report.facts.forEach((fact) => {
-            const tr = document.createElement('tr');
-            const label = document.createElement('td');
-            label.style.cssText = 'padding: 0.15rem 0.9rem 0.15rem 0; opacity: 0.7; vertical-align: top;';
-            label.innerText = fact.label;
-            const value = document.createElement('td');
-            value.style.cssText = 'padding: 0.15rem 0; word-break: break-word;';
-            value.innerText = fact.value;
-            tr.appendChild(label);
-            tr.appendChild(value);
-            table.appendChild(tr);
-        });
-        chatLog.appendChild(table);
-    }
+    appendFactsTable(report.facts);
 
     if (report.top_consumers && report.top_consumers.length > 0) {
         const text = report.top_consumers
@@ -612,6 +624,149 @@ function renderDiskReport(report) {
     }
 }
 
+function renderAppsTable(apps) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse; width: calc(100% - 1.8rem);';
+    apps.forEach((app) => {
+        const tr = document.createElement('tr');
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; font-weight: 500; white-space: nowrap; vertical-align: top;';
+        name.innerText = app.name;
+        tr.appendChild(name);
+
+        const stats = document.createElement('td');
+        stats.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; opacity: 0.75; white-space: nowrap; vertical-align: top;';
+        const bits = [];
+        if (app.cpu_percent != null) bits.push(`${app.cpu_percent}% CPU`);
+        if (app.memory_mb != null) bits.push(formatMemoryMb(app.memory_mb));
+        if (app.processes != null) bits.push(`${app.processes} proc${app.processes === 1 ? '' : 's'}`);
+        if (app.uptime) bits.push(app.uptime);
+        stats.innerText = bits.join(' · ');
+        tr.appendChild(stats);
+
+        const detail = document.createElement('td');
+        detail.style.cssText = 'padding: 0.25rem 0; opacity: 0.65; word-break: break-word;';
+        detail.innerText = app.detail || '';
+        tr.appendChild(detail);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+function renderProcessesTable(processes) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse;';
+    processes.forEach((proc) => {
+        const tr = document.createElement('tr');
+
+        const pid = document.createElement('td');
+        pid.style.cssText = 'padding: 0.15rem 0.6rem 0.15rem 0; opacity: 0.55; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; vertical-align: top;';
+        pid.innerText = proc.pid != null ? proc.pid : '';
+        tr.appendChild(pid);
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.15rem 0.9rem 0.15rem 0; font-weight: 500; vertical-align: top;';
+        name.innerText = proc.name;
+        tr.appendChild(name);
+
+        const stats = document.createElement('td');
+        stats.style.cssText = 'padding: 0.15rem 0; opacity: 0.75;';
+        const bits = [];
+        if (proc.cpu_percent != null) bits.push(`${proc.cpu_percent}% CPU`);
+        if (proc.memory_mb != null) bits.push(formatMemoryMb(proc.memory_mb));
+        if (proc.state) bits.push(proc.state);
+        stats.innerText = bits.join(' · ');
+        tr.appendChild(stats);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+function renderProcessReport(report) {
+    if (!report) return;
+
+    if (report.summary) appendMessage('assistant', report.summary);
+    if (report.salvaged) appendSalvagedNotice();
+    if (report.explanation) {
+        appendBlock(report.explanation, 'font-size: 0.82rem; line-height: 1.5; padding: 0 0.9rem; opacity: 0.9;');
+    }
+
+    if (report.apps && report.apps.length > 0) {
+        // A real foreground/background split only when the session actually let us see windows.
+        // Rendering it on a degraded answer would show a distinction that was never observed.
+        if (report.confidence === 'full') {
+            const foreground = report.apps.filter((a) => a.state === 'foreground');
+            const background = report.apps.filter((a) => a.state !== 'foreground');
+            if (foreground.length > 0) {
+                appendBlock('Active windows', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+                renderAppsTable(foreground);
+            }
+            if (background.length > 0) {
+                appendBlock('Background', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+                renderAppsTable(background);
+            }
+        } else {
+            renderAppsTable(report.apps);
+        }
+
+        // Above the app list is where the split would have gone, so the limitation is read right
+        // where its absence would otherwise be confusing.
+        if (report.confidence === 'degraded') {
+            appendBlock(
+                'Window information is not available for this session, so which of these applications have a visible window cannot be determined. The list itself is accurate.',
+                'font-size: 0.75rem; padding: 0.3rem 0.9rem 0; opacity: 0.7; font-style: italic;',
+            );
+        }
+    }
+
+    if (report.processes && report.processes.length > 0) {
+        renderProcessesTable(report.processes);
+    }
+
+    const load = report.load;
+    if (load) {
+        if (load.cpu_percent != null) {
+            const barWrap = document.createElement('div');
+            barWrap.style.cssText = 'width: 100%; max-width: 400px; margin: 0.4rem 0.9rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; height: 10px;';
+            const bar = document.createElement('div');
+            const pct = Math.min(100, Math.max(0, load.cpu_percent));
+            bar.style.cssText = `height: 100%; width: ${pct}%; background: ${LOAD_SEVERITY_COLORS[load.severity] || '#888'};`;
+            barWrap.appendChild(bar);
+            chatLog.appendChild(barWrap);
+        }
+
+        const parts = [];
+        if (load.cpu_percent != null) parts.push(`${load.cpu_percent}% CPU`);
+        if (load.memory_percent != null) parts.push(`${load.memory_percent}% memory`);
+        if (load.load_1m != null) {
+            parts.push(load.cores != null ? `${load.load_1m} load / ${load.cores} cores` : `${load.load_1m} load`);
+        }
+        if (load.severity) parts.push(load.severity);
+        if (parts.length > 0) {
+            appendBlock(parts.join(' · '), 'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.75;');
+        }
+    }
+
+    appendFactsTable(report.facts);
+
+    // The one thing worth noticing, called out above the suggestion so it reads as the headline
+    // rather than one more line in a list the user has to scan.
+    if (report.standout) {
+        appendBlock(report.standout, 'font-size: 0.8rem; padding: 0.4rem 0.9rem; line-height: 1.5; border-left: 2px solid var(--border); margin: 0.3rem 0.9rem; font-weight: 500;');
+    }
+
+    if (report.suggestion) {
+        appendBlock(report.suggestion, 'font-size: 0.8rem; padding: 0.4rem 0.9rem; line-height: 1.5; border-left: 2px solid var(--border); margin: 0.3rem 0.9rem;');
+    }
+}
+
+// One entry per agent that renders a structured report, keyed by the orchestrator's `mode`. Adding a
+// fourth agent means adding a render function and a line here, not another branch in the switch below.
+const REPORT_RENDERERS = { disk: renderDiskReport, process: renderProcessReport };
+
 function handleOrchestratorEvent(rawEvent) {
     let data;
     try {
@@ -624,9 +779,11 @@ function handleOrchestratorEvent(rawEvent) {
         case 'started':
             startTrace();
             break;
-        case 'classified':
-            setTraceHeader(data.mode === 'disk' ? 'Checking storage' : 'Answering');
+        case 'classified': {
+            const headers = { disk: 'Checking storage', process: "Checking what's running" };
+            setTraceHeader(headers[data.mode] || 'Answering');
             break;
+        }
         case 'thinking_delta':
             appendThinkingDelta(data.text);
             break;
@@ -654,10 +811,12 @@ function handleOrchestratorEvent(rawEvent) {
             if (data.thinking && trace && !trace.thinking.innerText) {
                 trace.thinking.innerText = data.thinking;
             }
-            const salvaged = Boolean(data.disk_report && data.disk_report.salvaged);
+            const report = data[`${data.mode}_report`];
+            const salvaged = Boolean(report && report.salvaged);
             closeTrace(salvaged);
-            if (data.mode === 'disk') {
-                renderDiskReport(data.disk_report);
+            const renderer = REPORT_RENDERERS[data.mode];
+            if (renderer) {
+                renderer(report);
             } else {
                 appendMessage('assistant', data.content);
             }
