@@ -64,14 +64,14 @@
                         <span id="provider-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Loading…</span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
 
-                        <div id="provider-menu" class="chip-menu" style="display: none; position: absolute; bottom: calc(100% + 5px); left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
+                        <div id="provider-menu" class="chip-menu" style="display: none; position: absolute; left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
                     </div>
 
                     <div class="chip-dropdown" id="model-selector" style="position: relative; display: flex; align-items: center; gap: 0.35rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 9999px; padding: 0.35rem 0.75rem; cursor: pointer; transition: background 0.2s ease;" onmouseover="this.style.background='var(--bg-color)'" onmouseout="this.style.background='var(--card-bg)'" onclick="toggleDropdown('model-menu')">
                         <span id="model-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Loading…</span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
 
-                        <div id="model-menu" class="chip-menu" style="display: none; position: absolute; bottom: calc(100% + 5px); left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
+                        <div id="model-menu" class="chip-menu" style="display: none; position: absolute; left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
                     </div>
                 </div>
 
@@ -79,7 +79,7 @@
                     <span id="effort-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Effort: Medium</span>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
 
-                    <div id="effort-menu" class="chip-menu" style="display: none; position: absolute; bottom: calc(100% + 5px); right: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+                    <div id="effort-menu" class="chip-menu" style="display: none; position: absolute; right: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
                         <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: Low')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">Low</div>
                         <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: Medium')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">Medium</div>
                         <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: High')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">High</div>

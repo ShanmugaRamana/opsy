@@ -235,6 +235,13 @@ body {
     left: 50%;
     transform: translateX(-50%);
     z-index: 10;
+    transition: opacity 0.4s ease, top 0.4s ease;
+}
+
+.main-content.is-chatting .mode-switcher-container {
+    opacity: 0;
+    top: 0;
+    pointer-events: none;
 }
 
 .mode-switcher {
@@ -351,7 +358,7 @@ body {
 .main-content.is-chatting .chat-scroll-area {
     flex-grow: 1;
     margin-top: 0;
-    padding-top: 5rem;
+    padding-top: 1rem;
     padding-bottom: 2rem;
 }
 
@@ -723,4 +730,24 @@ body {
     background-color: var(--text-main);
     color: var(--bg-color);
     border-color: var(--text-main);
+}
+
+/* Chip Menu Positioning */
+.chip-menu {
+    top: calc(100% + 5px);
+    bottom: auto;
+}
+
+.main-content.is-chatting .chip-menu {
+    top: auto;
+    bottom: calc(100% + 5px);
+}
+
+/* Chip Dropdown Arrow Animation */
+.chip-dropdown > svg {
+    transition: transform 0.3s ease;
+}
+
+.chip-dropdown.active > svg {
+    transform: rotate(180deg);
 }
