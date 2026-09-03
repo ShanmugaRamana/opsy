@@ -37,14 +37,20 @@
             </div>
         </div>
 
-        <div class="chat-wrapper">
-            <div class="greeting-container">
-                <img src="/assets/images/logo.png" alt="Opsy" class="greeting-logo">
-                <h2 class="greeting-text" id="greeting-text">How can I help you?</h2>
+        <div class="chat-fade-top"></div>
+
+        <div class="chat-scroll-area" id="chat-scroll-area">
+            <div class="chat-wrapper">
+                <div class="greeting-container" id="greeting-container">
+                    <img src="/assets/images/logo.png" alt="Opsy" class="greeting-logo">
+                    <h2 class="greeting-text" id="greeting-text">How can I help you?</h2>
+                </div>
+
+                <div id="chat-log" style="display: none; width: 100%; flex-direction: column; gap: 0.75rem;"></div>
             </div>
+        </div>
 
-            <div id="chat-log" style="display: none; width: 100%; max-width: 640px; margin: 0 auto 1rem; flex-direction: column; gap: 0.75rem;"></div>
-
+        <div class="chat-input-wrapper">
             <div class="chat-input-container">
                 <input type="text" id="chat-input" placeholder="Message Opsy..." autofocus>
                 <button id="send-btn" class="send-btn">
@@ -58,14 +64,14 @@
                         <span id="provider-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Loading…</span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
 
-                        <div id="provider-menu" class="chip-menu" style="display: none; position: absolute; top: calc(100% + 5px); left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
+                        <div id="provider-menu" class="chip-menu" style="display: none; position: absolute; bottom: calc(100% + 5px); left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
                     </div>
 
                     <div class="chip-dropdown" id="model-selector" style="position: relative; display: flex; align-items: center; gap: 0.35rem; background: var(--card-bg); border: 1px solid var(--border); border-radius: 9999px; padding: 0.35rem 0.75rem; cursor: pointer; transition: background 0.2s ease;" onmouseover="this.style.background='var(--bg-color)'" onmouseout="this.style.background='var(--card-bg)'" onclick="toggleDropdown('model-menu')">
                         <span id="model-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Loading…</span>
                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
 
-                        <div id="model-menu" class="chip-menu" style="display: none; position: absolute; top: calc(100% + 5px); left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
+                        <div id="model-menu" class="chip-menu" style="display: none; position: absolute; bottom: calc(100% + 5px); left: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 140px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);"></div>
                     </div>
                 </div>
 
@@ -73,7 +79,7 @@
                     <span id="effort-text" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 500; color: var(--text-main);">Effort: Medium</span>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
 
-                    <div id="effort-menu" class="chip-menu" style="display: none; position: absolute; top: calc(100% + 5px); right: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
+                    <div id="effort-menu" class="chip-menu" style="display: none; position: absolute; bottom: calc(100% + 5px); right: 0; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 100; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.25);">
                         <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: Low')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">Low</div>
                         <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: Medium')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">Medium</div>
                         <div class="chip-option" onclick="selectOption(event, 'effort', 'Effort: High')" style="padding: 0.5rem 0.75rem; font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-main);">High</div>

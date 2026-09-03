@@ -211,8 +211,14 @@ const chatLog = document.getElementById('chat-log');
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
 
+function scrollChatToBottom() {
+    const scrollArea = document.getElementById('chat-scroll-area');
+    if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
+}
+
 function appendMessage(role, text) {
     chatLog.style.display = 'flex';
+    document.getElementById('greeting-container').classList.add('chat-active');
     const bubble = document.createElement('div');
     bubble.className = `chat-message chat-message-${role}`;
     bubble.style.cssText = 'padding: 0.6rem 0.9rem; border-radius: 10px; font-family: \'Inter\', sans-serif; font-size: 0.85rem; line-height: 1.4; white-space: pre-wrap;';
@@ -229,6 +235,7 @@ function appendMessage(role, text) {
     }
     bubble.innerText = text;
     chatLog.appendChild(bubble);
+    scrollChatToBottom();
     return bubble;
 }
 
@@ -245,6 +252,7 @@ let trace = null;
 
 function startTrace() {
     chatLog.style.display = 'flex';
+    document.getElementById('greeting-container').classList.add('chat-active');
 
     const details = document.createElement('details');
     details.open = true;
@@ -281,7 +289,7 @@ function appendThinkingDelta(text) {
     const active = ensureTrace();
     active.thinking.innerText += text;
     if (active.count === 0) setTraceHeader('Thinking');
-    chatLog.scrollTop = chatLog.scrollHeight;
+    scrollChatToBottom();
 }
 
 function traceRowKey(data) {
@@ -301,7 +309,7 @@ function startTraceRow(data) {
     active.count += 1;
     active.labels.push(target);
     setTraceHeader(`Running ${target}`);
-    chatLog.scrollTop = chatLog.scrollHeight;
+    scrollChatToBottom();
 }
 
 function finishTraceRow(data) {
@@ -317,6 +325,7 @@ function finishTraceRow(data) {
     entry.row.style.fontWeight = '500';
     entry.row.insertAdjacentElement('afterend', output);
     setTraceHeader(`Checked ${entry.target}`);
+    scrollChatToBottom();
 }
 
 // `keepOpen` is for a salvaged answer: when the model never returned a usable report, the commands
@@ -375,10 +384,12 @@ function countdownRetry(row, seconds) {
 
 function appendBlock(text, styles) {
     chatLog.style.display = 'flex';
+    document.getElementById('greeting-container').classList.add('chat-active');
     const block = document.createElement('div');
     block.style.cssText = `font-family: 'Inter', sans-serif; white-space: pre-wrap; ${styles}`;
     block.innerText = text;
     chatLog.appendChild(block);
+    scrollChatToBottom();
     return block;
 }
 
