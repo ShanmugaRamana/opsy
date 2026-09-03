@@ -391,6 +391,13 @@ function renderPermissionRequest(data) {
     command.innerText = data.command;
     card.appendChild(command);
 
+    if (data.count_lines) {
+        const note = document.createElement('div');
+        note.style.cssText = 'font-size: 0.7rem; opacity: 0.65; margin-bottom: 0.4rem;';
+        note.innerText = 'Only a count of the result will be reported, not the full output.';
+        card.appendChild(note);
+    }
+
     const buttons = document.createElement('div');
     buttons.style.cssText = 'display: flex; gap: 0.4rem;';
 

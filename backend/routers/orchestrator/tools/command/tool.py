@@ -64,6 +64,12 @@ DENIED_OPTIONS = {
     "--delete", "--output", "--write",
 }
 
+# There is no shell, so these do nothing useful - subprocess passes argv straight to the binary, and
+# a literal "|" is just a string `find` or `ls` does not understand. Refusing them here, before the
+# user is even asked, turns a wasted approval round trip and a confusing find/ls syntax error into an
+# immediate, actionable message the model can react to in the same turn.
+SHELL_OPERATOR_TOKENS = {"|", "||", "&", "&&", ";", ";;", "<", "<<", ">", ">>", "`"}
+
 
 def validate_argv(argv):
     """Returns (resolved_argv, None) or (None, error_message).
@@ -78,6 +84,15 @@ def validate_argv(argv):
         return None, "the command contains a null byte"
     if any(not token.strip() for token in tokens[:1]):
         return None, "the command is empty"
+
+    for token in tokens:
+        if token in SHELL_OPERATOR_TOKENS or "$(" in token or "`" in token or "\n" in token:
+            return None, (
+                f"'{token}' is a shell operator, but there is no shell here - argv runs directly, so "
+                "pipes, redirects and command substitution do nothing. Request the raw output of one "
+                "command and work with it directly, or set count_lines to true for a count instead of "
+                "piping into wc"
+            )
 
     binary = os.path.basename(tokens[0])
     if binary in DENIED_BINARIES:
@@ -97,9 +112,15 @@ def validate_argv(argv):
     return [resolved] + tokens[1:], None
 
 
-def execute_command(argv, timeout=DEFAULT_TIMEOUT):
+def execute_command(argv, timeout=DEFAULT_TIMEOUT, count_lines=False):
     """Runs an already-approved argv. Never raises: every failure becomes a short explanatory string,
-    so the agent always has something honest to report."""
+    so the agent always has something honest to report.
+
+    `count_lines` is how "how many files" questions get answered without a shell: piping into
+    `wc -l` is refused by validate_argv, since there is nothing here to interpret the pipe, so this
+    is the counting primitive in its place. The count is taken from the complete output before
+    truncation, not from whatever fits in MAX_OUTPUT_CHARS, so a large result still gets an exact
+    number rather than an undercount."""
     resolved, error = validate_argv(argv)
     if error:
         return f"That command cannot be run: {error}."
@@ -120,6 +141,10 @@ def execute_command(argv, timeout=DEFAULT_TIMEOUT):
 
     if result.returncode != 0 and not stdout:
         return f"The command exited with code {result.returncode}: {stderr or 'no output'}"
+
+    if count_lines:
+        count = sum(1 for line in stdout.splitlines() if line.strip())
+        return f"{count} matching lines."
 
     if not stdout:
         return "The command produced no output."

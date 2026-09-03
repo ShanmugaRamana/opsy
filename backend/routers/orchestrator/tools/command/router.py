@@ -20,6 +20,7 @@ class RunApprovedCommand(BaseModel):
     request_id: str = Field(min_length=1)
     argv: list[str] = Field(min_length=1)
     timeout: int = DEFAULT_TIMEOUT
+    count_lines: bool = False
 
 
 @router.get("/")
@@ -48,5 +49,7 @@ async def run_approved_command(payload: RunApprovedCommand):
             detail="This command does not match the one the user approved.",
         )
 
-    output = await anyio.to_thread.run_sync(execute_command, list(payload.argv), payload.timeout)
+    output = await anyio.to_thread.run_sync(
+        execute_command, list(payload.argv), payload.timeout, payload.count_lines
+    )
     return {"argv": list(payload.argv), "output": output}
