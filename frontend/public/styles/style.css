@@ -134,6 +134,18 @@ body {
     cursor: not-allowed;
 }
 
+.recent-chats-heading {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+    padding-left: 0.25rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
 .session-list {
     display: flex;
     flex-direction: column;
