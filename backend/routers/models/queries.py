@@ -43,6 +43,21 @@ def sync_provider_catalog(conn, provider):
             )
 
 
+def clear_provider_catalog(conn, provider):
+    """Removes all of a cloud provider's rows from the models table. Used when its BYOK key is
+    deleted, since a provider with no key configured shouldn't still offer models to pick from.
+    Same local-provider guard as sync_provider_catalog, for the same reason."""
+    if provider in LOCAL_PROVIDERS:
+        raise ValueError(
+            f"clear_provider_catalog() must not be called for local provider {provider!r} - "
+            "local models table rows are managed by local/queries.py:mark_ready()"
+        )
+
+    with conn.cursor() as cur:
+        cur.execute(CREATE_MODELS_TABLE_SQL)
+        cur.execute("DELETE FROM models WHERE provider = %s", (provider,))
+
+
 def list_models(conn, provider=None):
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass('public.models')")

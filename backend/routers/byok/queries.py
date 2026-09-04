@@ -50,6 +50,18 @@ def get_key(conn, provider):
         return cur.fetchone()
 
 
+def delete_key(conn, provider):
+    """Returns True if a key was removed, False if the provider had none configured."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.byok')")
+        if cur.fetchone()[0] is None:
+            return False
+
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM byok WHERE provider = %s", (provider,))
+        return cur.rowcount > 0
+
+
 def list_keys(conn):
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass('public.byok')")

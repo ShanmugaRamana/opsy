@@ -45,6 +45,11 @@ app.get('/download', (req, res) => {
   res.render('index', { title: 'Downloading - Zyros', page: 'pages/download' });
 });
 
+// Settings route
+app.get('/settings', (req, res) => {
+  res.render('index', { title: 'Settings - Zyros', page: 'pages/settings' });
+});
+
 // Shutdown route for PC app to close the server
 app.post('/shutdown', (req, res) => {
   console.log('Received shutdown request, terminating server...');

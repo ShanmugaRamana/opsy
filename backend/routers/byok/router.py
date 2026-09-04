@@ -4,9 +4,9 @@ from fastapi import APIRouter, HTTPException
 
 from core.crypto import encrypt
 from core.db import get_connection
-from routers.models.queries import sync_provider_catalog
+from routers.models.queries import clear_provider_catalog, sync_provider_catalog
 from . import providers
-from .queries import list_keys, upsert_key
+from .queries import delete_key, list_keys, upsert_key
 from .schemas import ApiKeyPayload, ApiKeyVerifyResult, ConfiguredProvider, VALID_PROVIDERS
 
 logger = logging.getLogger("byok")
@@ -42,6 +42,30 @@ def verify_and_store_key(payload: ApiKeyPayload):
         conn.close()
 
     return {"valid": True, "provider": payload.provider}
+
+
+@router.delete("/key/{provider}")
+def delete_key_route(provider: str):
+    if provider not in VALID_PROVIDERS:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
+
+    conn = get_connection()
+    try:
+        deleted = delete_key(conn, provider)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"No key configured for {provider}")
+        clear_provider_catalog(conn, provider)
+        conn.commit()
+        logger.info(f"deleted key and cleared model catalog for {provider}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        conn.close()
+
+    return {"deleted": provider}
 
 
 @router.get("/keys", response_model=list[ConfiguredProvider])

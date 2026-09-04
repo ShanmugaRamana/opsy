@@ -5,6 +5,10 @@ collapseBtn.addEventListener('click', () => {
     sidebar.classList.toggle('collapsed');
 });
 
+document.querySelector('.settings-btn').addEventListener('click', () => {
+    window.location.href = '/settings';
+});
+
 // Randomized greeting phrases
 const phrases = [
     "Ready?",
