@@ -1,0 +1,27 @@
+[package]
+name = "zyros-backend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = { version = "0.7", features = ["ws", "macros", "json"] }
+tokio = { version = "1.38", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "chrono", "json"] }
+chrono = { version = "0.4", features = ["serde"] }
+dotenvy = "0.15"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+sysinfo = "0.30"
+futures = "0.3"
+uuid = { version = "1.8", features = ["v4", "serde"] }
+regex = "1.10"
+lazy_static = "1.4"
+async-trait = "0.1"
+aes-gcm = "0.10"
+base64 = "0.22"
+rand = "0.8"
