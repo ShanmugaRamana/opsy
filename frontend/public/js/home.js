@@ -790,13 +790,13 @@ function renderTurnFailure(data) {
     document.querySelector('.main-content').classList.add('is-chatting');
 
     const card = document.createElement('div');
-    card.style.cssText = 'display: flex; justify-content: space-between; align-items: center; font-family: \'Inter\', sans-serif; font-size: 0.8rem; line-height: 1.45; padding: 0.7rem 0.9rem; margin: 0.25rem 0; border: 1px solid var(--border); border-left: 3px solid #c0392b; border-radius: 8px; background: var(--card-bg); gap: 1rem;';
+    card.style.cssText = 'display: flex; justify-content: space-between; align-items: center; font-family: \'Inter\', sans-serif; font-size: 0.8rem; line-height: 1.45; padding: 0.7rem 0.9rem; margin: 0.25rem 0; border: 1px solid #dc2626; border-radius: 8px; background: transparent; gap: 1rem;';
 
     const content = document.createElement('div');
     content.style.cssText = 'display: flex; flex-direction: column; gap: 0.15rem; flex: 1;';
 
     const heading = document.createElement('div');
-    heading.style.cssText = 'font-weight: 600; color: #c0392b;';
+    heading.style.cssText = 'font-weight: 600; color: #dc2626;';
     heading.innerText = title;
     content.appendChild(heading);
 
