@@ -658,7 +658,8 @@ function finishTraceRow(data) {
     if (!entry) return;
 
     const output = document.createElement('div');
-    output.style.cssText = 'white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin: 0.2rem 0 0.4rem 1.2rem; padding-left: 0.4rem; border-left: 1px solid var(--border);';
+    output.style.cssText = 'white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin: 0.2rem 0 0.4rem 1.2rem; padding-left: 0.4rem; border-left: 1px solid var(--border); max-height: 15rem; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(0, 0, 0, 0.2) transparent;';
+    output.classList.add('tool-result-scroll');
     output.innerText = data.output;
 
     entry.summary.innerText = entry.target;
