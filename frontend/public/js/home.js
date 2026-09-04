@@ -544,7 +544,7 @@ function renderPermissionRequest(data) {
 
     const title = document.createElement('div');
     title.style.cssText = 'font-weight: 600; margin-bottom: 0.3rem;';
-    title.innerText = 'Opsy wants to run a command';
+    title.innerText = 'Zyros wants to run a command';
     card.appendChild(title);
 
     if (data.reason) {

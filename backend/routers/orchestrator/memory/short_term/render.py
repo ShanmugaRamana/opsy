@@ -11,7 +11,7 @@ from .memory import MAX_CLASSIFIER_CHARS, truncate
 
 # Only the classifier's preamble needs these; the message-array renderings carry the role in the
 # payload itself.
-_SPEAKERS = {"user": "User", "assistant": "Opsy"}
+_SPEAKERS = {"user": "User", "assistant": "Zyros"}
 
 
 def _messages(turns):
