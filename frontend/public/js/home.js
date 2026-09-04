@@ -22,7 +22,7 @@ const phrases = [
 document.getElementById('greeting-text').innerText = phrases[Math.floor(Math.random() * phrases.length)];
 
 // Sidebar user profile, loaded from the onboarded user's record
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'http://localhost:8008';
 
 const ROLE_LABELS = {
     'developer': 'Developer',
@@ -193,8 +193,7 @@ async function loadProviderAndModelDropdowns() {
         setModelSelectorEnabled(false);
 
         if (providers.length > 0) {
-            providerTextEl.innerText = 'Select Provider';
-            modelTextEl.innerText = 'Select Model';
+            selectProvider(providers[0]);
         } else {
             providerTextEl.innerText = 'No provider';
             modelTextEl.innerText = 'No models';

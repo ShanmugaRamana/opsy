@@ -1,5 +1,5 @@
-const BACKEND_URL = 'http://localhost:8000';
-const BACKEND_WS = 'ws://localhost:8000';
+const BACKEND_URL = 'http://localhost:8008';
+const BACKEND_WS = 'ws://localhost:8008';
 
 const modelNameEl = document.getElementById('dl-model-name');
 const fillEl = document.getElementById('dl-progress-fill');

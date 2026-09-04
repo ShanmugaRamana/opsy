@@ -42,9 +42,10 @@ def start_backend_server():
     try:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         backend_dir = os.path.join(os.path.dirname(base_dir), 'backend')
-        venv_python = os.path.join(backend_dir, 'venv', 'bin', 'python')
+        binary_path = os.path.join(backend_dir, 'target', 'release', 'zyros-backend')
+        cmd = [binary_path] if os.path.exists(binary_path) else ['cargo', 'run', '--release']
         process = subprocess.Popen(
-            [venv_python, '-u', '-m', 'uvicorn', 'main:app', '--port', '8000'],
+            cmd,
             cwd=backend_dir,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1
         )
