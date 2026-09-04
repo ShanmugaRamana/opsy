@@ -1,87 +1,112 @@
-# Opsy
+# Zyros: AI-Powered Linux Operations Assistant Using Natural Language Queries
 
-> A brief description of what this project does and who it's for.
+Zyros is an intelligent, privacy-first desktop assistant designed specifically for Linux. It translates natural language questions and administrative requests into real-time Linux system diagnostics, inspection reports, and operations without requiring users to memorize complex terminal syntax or manually parse terminal commands.
 
-## Table of Contents
+---
 
-- [Overview](#overview)
-- [Project Structure](#project-structure)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Contributing](#contributing)
-- [License](#license)
+## Key Features
 
-## Overview
+- **Natural Language System Diagnostics**: Query OS specifications, Linux kernel versions, RAM usage, storage breakdown, open ports, network interfaces, and running processes using everyday conversational prompts.
+- **Direct System Inspection**: Directly observes your system in real time and provides factual, actionable answers rather than generic tutorial steps.
+- **High-Performance Rust Backend**: Built with Axum, Tokio, SQLx, and native Linux diagnostic tooling for ultra-fast, lightweight execution.
+- **Flexible Model Provider Support**:
+  - **Local Models (Ollama)**: Full offline privacy with local LLMs (e.g. Qwen, LLaMA, Gemma).
+  - **Bring Your Own Key (BYOK)**: Securely encrypted cloud API key integration for OpenAI, Anthropic, Gemini, and Groq.
+- **Hardware-Aware Recommendations**: Automatically inspects available CPU, RAM, and GPU hardware to recommend the optimal local AI model tier.
+- **Persistent Sessions & History**: Stores conversational history, multi-turn diagnostics, and session state in PostgreSQL.
 
-[Provide a more detailed overview of the Opsy project, its main goals, and the problem it solves.]
+---
 
-## Project Structure
+## Project Architecture
 
-This repository is organized into the following main directories:
+```
+opsy/
+├── app/                  # Desktop application GUI runner (PyWebView / WebKitGTK)
+│   ├── main.py           # Main window & lifecycle manager
+│   └── screens/          # Application window templates (e.g., splash screen)
+├── backend/              # High-performance Rust backend (Axum + Tokio + SQLx)
+│   ├── src/
+│   │   ├── main.rs       # Server entrypoint & routing (Port 8008)
+│   │   ├── system_tools.rs # Linux system context & inspection engine
+│   │   ├── crypto.rs     # AES-GCM BYOK API key encryption
+│   │   ├── db.rs         # PostgreSQL connection pool & schema migrations
+│   │   └── routers/      # Orchestrator, Hardware, BYOK, Sessions, Models
+│   └── Cargo.toml
+├── frontend/             # Desktop UI client & Express server (Port 3000)
+│   ├── index.js          # Express static & template server
+│   ├── views/            # EJS template views (Home, Onboarding, Settings, etc.)
+│   └── public/           # Client-side JavaScript, CSS styles, and media assets
+└── README.md
+```
 
-*   **`app/`**: Application core components.
-*   **`backend/`**: Backend services, APIs, and business logic.
-*   **`frontend/`**: Frontend application and user interface.
-*   **`web/`**: Web assets, static files, and HTML templates.
-*   **`plans/`**: Project plans, architectural diagrams, and documentation.
+---
 
 ## Prerequisites
 
-Before you begin, ensure you have met the following requirements:
+- **Linux OS** (Arch Linux, Ubuntu, Debian, Fedora, etc.)
+- **Rust** (1.75+ / `cargo`)
+- **Node.js** (v18+) & `npm`
+- **Python 3.10+** (with `pywebview` and WebKitGTK bindings)
+- **PostgreSQL** (running locally or via Supabase/cloud instance)
+- *(Optional)* **Ollama** installed and running for local LLM inference
 
-*   [Dependency 1, e.g., Node.js v18+]
-*   [Dependency 2, e.g., Python 3.10+]
-*   [Dependency 3, e.g., Docker]
+---
 
-## Installation
+## Getting Started
 
-To install and set up Opsy locally, follow these steps:
+### 1. Configure Environment Variables
+Create or verify your `.env` file in the project root:
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd opsy
-   ```
+```env
+HOST=0.0.0.0
+PORT=8008
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=yourpassword
+ENCRYPTION_KEY=your-32-byte-hex-key-here
+OLLAMA_BASE_URL=http://localhost:11434
+```
 
-2. Install backend dependencies:
+### 2. Launching Zyros
+
+You can launch the complete Zyros desktop environment with a single command:
+
+```bash
+cd app
+./venv/bin/python main.py
+```
+
+*This will automatically launch the Rust backend on port `8008`, the frontend server on port `3000`, and present the native Zyros desktop window.*
+
+---
+
+## Running Individual Services (Development Mode)
+
+If you prefer to run services in separate terminals:
+
+1. **Rust Backend Server** (Port `8008`):
    ```bash
    cd backend
-   # Add backend installation command (e.g., npm install or pip install -r requirements.txt)
+   cargo run --release
    ```
 
-3. Install frontend dependencies:
+2. **Frontend UI Server** (Port `3000`):
    ```bash
    cd frontend
-   # Add frontend installation command (e.g., npm install)
+   npm install
+   npm start
    ```
 
-## Usage
-
-Instructions on how to run and use the project locally.
-
-1. Start the backend server:
-   ```bash
-   cd backend
-   # Add backend start command (e.g., npm run start or python main.py)
-   ```
-
-2. Start the frontend development server:
-   ```bash
-   cd frontend
-   # Add frontend start command (e.g., npm run dev)
-   ```
+---
 
 ## Contributing
 
-Contributions are always welcome! 
+Contributions are welcome! Please check out our [Contributing Guidelines](CONTRIBUTING.md) to get started.
 
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+---
 
 ## License
 
-Distributed under the [License Name] License. See `LICENSE` for more information.
+Distributed under the Apache License 2.0. See [LICENSE](LICENSE) for more information.
