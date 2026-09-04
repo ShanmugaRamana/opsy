@@ -119,6 +119,29 @@ def narration_chunk(buffered, narrated, complete=False):
     return buffered[narrated:limit], limit
 
 
+class NarrationStream:
+    """`narration_chunk` behind the same feed/finish interface `xml_common.ThinkingStream` has.
+
+    The report agents reason in prose before their XML and stream that; the base agent reasons inside
+    <thinking> and streams that. Both are "the reasoning the user watches", and a transport that
+    happens to be shared between them (ollama_round) should not have to know which it is carrying -
+    it asks for a streamer and feeds it text.
+    """
+
+    def __init__(self):
+        self._buffered = ""
+        self._narrated = 0
+
+    def feed(self, chunk):
+        self._buffered += chunk or ""
+        text, self._narrated = narration_chunk(self._buffered, self._narrated)
+        return text
+
+    def finish(self):
+        text, self._narrated = narration_chunk(self._buffered, self._narrated, complete=True)
+        return text
+
+
 # ---- The ad-hoc command flow ----
 
 def command_result(agent, label, output):
@@ -282,11 +305,17 @@ def gemini_command_tool(primary_tool):
 # local model is called.
 
 
-async def ollama_round(base_url, model_id, messages, tools, result):
+async def ollama_round(base_url, model_id, messages, tools, result, streamer_factory=NarrationStream):
     """Streams one round against Ollama's /api/chat. Fills `result` with `text` (the round's
     narration) and `tool_calls` (a list of {id, name, arguments}, `arguments` re-serialized as a JSON
     string so the rest of an agent's loop can `json.loads` it exactly like the OpenAI-shaped agents
     do), or sets `result["error"]` on failure.
+
+    `streamer_factory` decides which part of the round's text is streamed as thinking: the default
+    streams the prose written before the answer's XML, which is what the report agents write, while
+    the base agent passes xml_common.ThinkingStream to stream what it writes inside <thinking>. It is
+    a factory rather than an instance because each retried attempt needs a streamer with no memory of
+    the attempt it replaced.
 
     There is no 429 concept for a model running on this machine, so unlike the cloud rounds this only
     retries on genuine connection failures - a dropped connection or Ollama not yet finished loading
@@ -303,7 +332,8 @@ async def ollama_round(base_url, model_id, messages, tools, result):
 
     for attempt in range(MAX_TRANSIENT_RETRIES + 1):
         buffered = ""
-        narrated = 0
+        streamer = streamer_factory()
+        streamed = 0
         tool_calls = []
 
         try:
@@ -330,8 +360,9 @@ async def ollama_round(base_url, model_id, messages, tools, result):
                         text = message.get("content")
                         if text:
                             buffered += text
-                            narration, narrated = narration_chunk(buffered, narrated)
+                            narration = streamer.feed(text)
                             if narration:
+                                streamed += len(narration)
                                 yield {"type": "thinking_delta", "text": narration}
 
                         for call in message.get("tool_calls") or []:
@@ -350,7 +381,7 @@ async def ollama_round(base_url, model_id, messages, tools, result):
             # Retrying a round that already streamed narration or collected tool calls would replay
             # them on the client, so only an untouched round can be replayed - same rule the
             # OpenAI-compatible round follows.
-            if narrated or tool_calls or attempt >= MAX_TRANSIENT_RETRIES:
+            if streamed or tool_calls or attempt >= MAX_TRANSIENT_RETRIES:
                 result["error"] = str(e)
                 return
             delay = transient_delay(attempt)
@@ -358,7 +389,7 @@ async def ollama_round(base_url, model_id, messages, tools, result):
             await wait_before_transient_retry(delay, attempt, str(e)[:120])
             continue
 
-        narration, narrated = narration_chunk(buffered, narrated, complete=True)
+        narration = streamer.finish()
         if narration:
             yield {"type": "thinking_delta", "text": narration}
 

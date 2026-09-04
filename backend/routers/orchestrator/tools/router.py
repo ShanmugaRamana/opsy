@@ -4,6 +4,7 @@ from routers.orchestrator.tools.command.router import TOOL_GROUP_INFO as _comman
 from routers.orchestrator.tools.disk.router import TOOL_GROUP_INFO as _disk_tool_group_info
 from routers.orchestrator.tools.network.router import TOOL_GROUP_INFO as _network_tool_group_info
 from routers.orchestrator.tools.process.router import TOOL_GROUP_INFO as _process_tool_group_info
+from routers.orchestrator.tools.system.router import TOOL_GROUP_INFO as _system_tool_group_info
 
 router = APIRouter(prefix="/linux/tools", tags=["tools"])
 
@@ -13,6 +14,7 @@ TOOL_GROUP_REGISTRY = [
     _disk_tool_group_info,
     _process_tool_group_info,
     _network_tool_group_info,
+    _system_tool_group_info,
     _command_tool_group_info,
 ]
 

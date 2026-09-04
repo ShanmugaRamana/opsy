@@ -140,8 +140,8 @@ async def _call_ollama(base_url, model_id, system_prompt, message, history=None)
     """Ollama's native /api/chat, not its OpenAI-compatible /v1/chat/completions - that compat layer
     silently drops tool calls when streaming, so the agents rely on this same native endpoint for
     their tool loops (see agents/shared.py:ollama_round). This non-streaming call is only for
-    classification, session-title generation, and the plain general-chat path, none of which use
-    tools, but it stays on the same endpoint as a matter of consistency."""
+    classification and session-title generation, neither of which uses tools, but it stays on the
+    same endpoint as a matter of consistency."""
     payload = {
         "model": model_id,
         "messages": [

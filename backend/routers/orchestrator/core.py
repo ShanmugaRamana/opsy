@@ -24,10 +24,10 @@ from .agents.router import AGENT_WS_PATHS
 from .classify import classify_intent
 from .clients import ProviderCallError, call_provider
 from .memory.short_term.client import fetch_short_term
-from .prompts import BASE_SYSTEM_PROMPT, SESSION_TITLE_SYSTEM_PROMPT
+from .prompts import SESSION_TITLE_SYSTEM_PROMPT
 from .schemas import OrchestratorRequest
 from .turn_state import clear_running_turn, get_running_turn, set_running_turn
-from .xml_output import parse_response, to_storage_xml
+from .xml_output import to_storage_xml
 
 logger = logging.getLogger("orchestrator")
 
@@ -135,7 +135,16 @@ async def _relay_agent(mode, provider, api_key, model_id, message, base_url=None
     by the agent, following what already happens with `api_key` and `base_url`: the orchestrator
     resolves what a turn needs and passes the resolved values down. The agent still defaults it to an
     empty list, so its route stays directly callable without memory."""
-    ws_path = AGENT_WS_PATHS[mode]
+    ws_path = AGENT_WS_PATHS.get(mode)
+    if ws_path is None:
+        # Every mode the classifier can return is registered, so this means the classifier prompt and
+        # the registry have drifted apart. Since the orchestrator no longer keeps a path of its own to
+        # fall back to, that drift ends the turn with a real error rather than a KeyError that would
+        # take the socket down with it.
+        logger.error(f"no agent registered for mode {mode!r}")
+        yield {"type": "error", "status": 500, "detail": f"no agent is registered for '{mode}'"}
+        return
+
     saw_terminal = False
     try:
         async with websockets.connect(f"{INTERNAL_WS_BASE}{ws_path}") as ws:
@@ -277,42 +286,19 @@ async def run_orchestrator(request: OrchestratorRequest):
             if mode is not None:
                 yield {"type": "classified", "mode": mode}
 
-                if mode in AGENT_WS_PATHS:
-                    async for event in _relay_agent(
-                        mode, request.provider, api_key, request.model_id, request.message,
-                        base_url=base_url, history=history,
-                    ):
-                        if event["type"] == "error":
-                            event.setdefault("status", 502)
-                        if event["type"] == "final":
-                            event["session_id"] = session_id
-                            await _persist_final(session_id, event)
-                        yield event
-                else:
-                    try:
-                        raw_text = await call_provider(
-                            request.provider, api_key, request.model_id, BASE_SYSTEM_PROMPT, request.message,
-                            base_url=base_url, history=history,
-                        )
-                    except ProviderCallError as e:
-                        logger.error(f"{request.provider} call failed: {e}")
-                        yield {
-                            "type": "error",
-                            "status": 429 if getattr(e, "rate_limited", False) else 502,
-                            "detail": f"{request.provider} call failed: {e}",
-                        }
-                    else:
-                        thinking, content = parse_response(raw_text)
-                        final_event = {
-                            "type": "final",
-                            "mode": "general",
-                            "session_id": session_id,
-                            "thinking": thinking,
-                            "content": content,
-                            "raw_xml": raw_text,
-                        }
-                        await _persist_final(session_id, final_event)
-                        yield final_event
+                # Every mode the classifier can return is an agent with a route, including "general"
+                # (the base agent), so there is no branch here for answering a question in-process -
+                # the orchestrator classifies, relays and persists, and nothing else.
+                async for event in _relay_agent(
+                    mode, request.provider, api_key, request.model_id, request.message,
+                    base_url=base_url, history=history,
+                ):
+                    if event["type"] == "error":
+                        event.setdefault("status", 502)
+                    if event["type"] == "final":
+                        event["session_id"] = session_id
+                        await _persist_final(session_id, event)
+                    yield event
     finally:
         clear_running_turn()
 

@@ -10,7 +10,9 @@ logger = logging.getLogger("orchestrator")
 
 CLASSIFY_SYSTEM_PROMPT = load_prompt("orchestrator_classify")
 
-# Every specialist agent's mode. "general" is the fallback and is not an agent.
+# The specialist agents' modes. "general" is the base agent - a fourth agent with its own route, not
+# a non-agent path - but it stays separate here because it is also this classifier's no-match
+# fallback, which is a property none of the others have.
 AGENT_MODES = ("disk", "process", "network")
 GENERAL = "general"
 

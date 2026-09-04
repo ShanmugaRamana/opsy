@@ -1339,6 +1339,7 @@ function handleOrchestratorEvent(rawEvent) {
                 disk: 'Checking storage',
                 process: "Checking what's running",
                 network: 'Checking the network',
+                general: 'Thinking it through',
             };
             setTraceHeader(headers[data.mode] || 'Answering');
             break;
@@ -1368,7 +1369,10 @@ function handleOrchestratorEvent(rawEvent) {
         case 'final': {
             turnPending = false;
             setTurnInProgress(false);
-            // The general path doesn't stream, so its thinking arrives whole; keep it in the panel.
+            // Every mode streams its thinking now, so the panel is normally already filled by the
+            // deltas. This is the guard for a round that streamed nothing - a model that wrote its
+            // whole reply in one chunk, or a provider that only sent text once - so the reasoning
+            // still lands rather than being lost between the two paths.
             if (data.thinking && trace && !trace.thinking.innerText) {
                 trace.thinking.innerText = data.thinking;
             }
