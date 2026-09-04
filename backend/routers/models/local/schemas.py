@@ -10,22 +10,66 @@ class EnvironmentStatus(BaseModel):
     detail: Optional[str] = None
 
 
-class RecommendationEntry(BaseModel):
+class CatalogEntry(BaseModel):
     model_key: str
     tag: str
     display_name: str
+    category: str
     params_b: float
     quantization: str
     size_gb: float
     tool_calling: str
+    streams_tool_calls: bool
+
+
+class RecommendationEntry(BaseModel):
+    model_key: str
+    tag: str
+    display_name: str
+    category: str
+    params_b: float
+    quantization: str
+    size_gb: float
+    tool_calling: str
+    streams_tool_calls: bool
     fit: str
-    reason: Optional[str] = None
     installed: bool = False
+
+
+class ModelCategory(BaseModel):
+    key: str
+    label: str
+    summary: str
+    blurb: str
+    usable_gb: float
+    source: str
 
 
 class RecommendationsResponse(BaseModel):
     environment: EnvironmentStatus
-    recommendations: list[RecommendationEntry]
+    # None only when we couldn't measure memory - in which case `models` is empty and `note` says so.
+    category: Optional[ModelCategory] = None
+    # Every entry here is downloadable: anything this machine can't run or hasn't the disk for was
+    # excluded server-side rather than sent for the page to grey out.
+    models: list[RecommendationEntry]
+    note: Optional[str] = None
+
+
+class CatalogCategory(BaseModel):
+    key: str
+    label: str
+    summary: str
+    min_usable_gb: float
+    max_usable_gb: Optional[float] = None
+    floor_gb: float
+    models: list[CatalogEntry]
+
+
+class CatalogResponse(BaseModel):
+    backend: str
+    max_params_b: float
+    models_per_category: int
+    categories: list[CatalogCategory]
 
 
 class LocalModelRecord(BaseModel):

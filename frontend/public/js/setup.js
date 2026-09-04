@@ -265,53 +265,81 @@ loadInsights();
 
 // ---- Local models (Ollama): environment check, hardware-matched recommendations, download ----
 
+// The backend returns one hardware-matched category and only the models in it this machine can
+// actually run, so there is no "too large" / "not enough disk" card to render and no disabled-button
+// branch here. `installed` is the only reason a Download button is ever inert.
 const FIT_LABELS = {
     recommended: { label: 'Recommended', color: '#10b981' },
     possible: { label: 'Possible', color: 'var(--text-muted)' },
-    too_large: { label: 'Too large', color: '#f59e0b' },
-    no_disk_space: { label: 'Not enough disk space', color: '#f59e0b' },
-    unknown: { label: 'Unknown fit', color: '#94a3b8' },
 };
 
 function formatSize(gb) {
     return gb >= 1 ? `${gb.toFixed(1)} GB` : `${Math.round(gb * 1024)} MB`;
 }
 
-function renderLocalModels(recommendations) {
-    const container = document.getElementById('local-models-list');
+function setLocalLoading(isLoading) {
+    document.getElementById('local-models-loader').style.display = isLoading ? 'flex' : 'none';
+}
 
-    if (!recommendations.length) {
-        container.innerHTML = '<p style="font-family: \'Inter\', sans-serif; font-size: 0.85rem; color: var(--text-muted);">No models available.</p>';
+function renderCategoryHeader(category) {
+    const header = document.getElementById('local-category-header');
+    if (!category) {
+        header.style.display = 'none';
         return;
     }
 
-    container.innerHTML = recommendations.map(model => {
-        const fit = FIT_LABELS[model.fit] || FIT_LABELS.unknown;
-        const disabled = model.installed || model.fit === 'too_large' || model.fit === 'no_disk_space' || model.fit === 'unknown';
-        const muted = model.fit === 'too_large' || model.fit === 'no_disk_space' || model.fit === 'unknown';
+    document.getElementById('local-category-label').innerText = category.label;
+    document.getElementById('local-category-blurb').innerText = category.blurb;
+    document.getElementById('local-category-summary').innerText = category.summary;
+    header.style.display = 'flex';
+}
+
+function renderLocalNote(note) {
+    const noteEl = document.getElementById('local-models-note');
+    if (!note) {
+        noteEl.style.display = 'none';
+        return;
+    }
+    noteEl.innerText = note;
+    noteEl.style.display = 'block';
+}
+
+function renderLocalModels(models) {
+    const container = document.getElementById('local-models-list');
+
+    if (!models.length) {
+        container.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = models.map(model => {
+        const fit = FIT_LABELS[model.fit] || FIT_LABELS.possible;
         const buttonLabel = model.installed ? 'Installed' : 'Download';
         const detail = `${model.params_b}B · ${model.quantization} · ${formatSize(model.size_gb)}`;
 
         return `
-            <div class="model-item" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease; ${muted ? 'opacity: 0.55;' : ''}">
+            <div class="model-item" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; border: 1px solid var(--border); border-radius: 12px; background: transparent; transition: border-color 0.2s ease;">
                 <div style="display: flex; flex-direction: column; gap: 0.15rem;">
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
                         <span style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">${model.display_name}</span>
                         <span style="font-family: 'Inter', sans-serif; font-size: 0.7rem; color: ${fit.color}; text-transform: uppercase; letter-spacing: 0.05em;">${fit.label}</span>
                     </div>
-                    <span style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">${model.reason || detail}</span>
+                    <span style="font-family: 'Clash Display', sans-serif; font-size: 0.85rem; color: var(--text-muted);">${detail}</span>
                 </div>
                 <button
                     class="local-download-btn"
                     data-model-key="${model.model_key}"
                     data-display-name="${model.display_name}"
-                    ${disabled ? 'disabled' : ''}
-                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: ${disabled ? 'default' : 'pointer'}; color: var(--text-main); transition: background-color 0.2s ease; opacity: ${disabled ? '0.6' : '1'};"
-                    ${disabled ? '' : `onmouseover="this.style.backgroundColor='var(--bg-color)'" onmouseout="this.style.backgroundColor='transparent'"`}
+                    ${model.installed ? 'disabled' : ''}
+                    style="background: transparent; border: 1px solid var(--border); padding: 0.4rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.85rem; cursor: ${model.installed ? 'default' : 'pointer'}; color: var(--text-main); transition: background-color 0.2s ease; opacity: ${model.installed ? '0.6' : '1'};"
+                    ${model.installed ? '' : `onmouseover="this.style.backgroundColor='var(--bg-color)'" onmouseout="this.style.backgroundColor='transparent'"`}
                 >${buttonLabel}</button>
             </div>
         `;
     }).join('');
+
+    container.style.display = 'flex';
 }
 
 function showEnvBanner(detail) {
@@ -324,27 +352,74 @@ function hideEnvBanner() {
     document.getElementById('local-env-banner').style.display = 'none';
 }
 
+// What the Recheck button used to do, without asking the user to do it: while Ollama isn't running
+// (or the backend isn't reachable yet), keep asking. Someone who starts `ollama serve` in a terminal
+// and switches back finds a page that has already noticed.
+const LOCAL_RETRY_INTERVAL_MS = 4000;
+let localRetryTimer = null;
+let localLoadInFlight = false;
+// Flips once anything real has been painted - a rendered list, or an honest message explaining why
+// there isn't one. Both are answers, and neither should be replaced by skeletons on every retry.
+let localHasRendered = false;
+
+function scheduleLocalRetry() {
+    if (localRetryTimer !== null || document.hidden) return;
+    localRetryTimer = setInterval(loadLocalModels, LOCAL_RETRY_INTERVAL_MS);
+}
+
+function stopLocalRetry() {
+    if (localRetryTimer === null) return;
+    clearInterval(localRetryTimer);
+    localRetryTimer = null;
+}
+
 async function loadLocalModels() {
+    // A slow request must not stack up behind the retry interval.
+    if (localLoadInFlight) return;
+    localLoadInFlight = true;
+
+    // Only the very first load shows the skeletons - a background retry replacing what is already on
+    // screen with a spinner every 4 seconds would be worse than the stale view it is refreshing.
+    if (!localHasRendered) setLocalLoading(true);
+
     try {
         const res = await fetch(`${BACKEND_URL}/linux/local-models/recommendations`);
         if (!res.ok) throw new Error(`recommendations fetch failed: ${res.status}`);
         const data = await res.json();
 
-        if (!data.environment.running) {
-            showEnvBanner(data.environment.detail);
-        } else {
+        if (data.environment.running) {
             hideEnvBanner();
+            stopLocalRetry();
+        } else {
+            showEnvBanner(data.environment.detail);
+            scheduleLocalRetry();
         }
 
-        renderLocalModels(data.recommendations);
+        renderCategoryHeader(data.category);
+        renderLocalModels(data.models);
+        renderLocalNote(data.note);
+        localHasRendered = true;
     } catch (e) {
         console.error('Could not load local model recommendations:', e);
-        document.getElementById('local-models-list').innerHTML =
-            '<p style="font-family: \'Inter\', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Could not reach the backend to load local models.</p>';
+        renderCategoryHeader(null);
+        renderLocalNote('Could not reach the backend to load local models. Retrying…');
+        localHasRendered = true;
+        scheduleLocalRetry();
+    } finally {
+        localLoadInFlight = false;
+        setLocalLoading(false);
     }
 }
 
-document.getElementById('local-env-recheck-btn').addEventListener('click', loadLocalModels);
+// A backgrounded setup page shouldn't poll forever; coming back to it should feel current.
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+        stopLocalRetry();
+    } else if (document.getElementById('local-env-banner').style.display !== 'none') {
+        loadLocalModels();
+        scheduleLocalRetry();
+    }
+});
 
 document.getElementById('local-models-list').addEventListener('click', async (e) => {
     const btn = e.target.closest('.local-download-btn');
@@ -388,7 +463,10 @@ document.getElementById('local-models-list').addEventListener('click', async (e)
     if (res.status === 409) {
         errorEl.innerHTML = `${detail} <a href="/download" style="color: var(--text-main); text-decoration: underline;">View progress</a>`;
     } else if (res.status === 503) {
+        // Ollama went away between page load and this click. Same banner, same self-healing retry -
+        // the user shouldn't have to reload to get back to a working page.
         showEnvBanner(detail);
+        scheduleLocalRetry();
         errorEl.innerText = detail;
     } else {
         errorEl.innerText = detail;

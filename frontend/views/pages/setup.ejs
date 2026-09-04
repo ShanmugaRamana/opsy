@@ -1,5 +1,30 @@
 <style>
     .hw-card-unavailable { opacity: 0.55; }
+
+    @keyframes local-spin { to { transform: rotate(360deg); } }
+    @keyframes local-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 0.7; } }
+
+    .local-spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--border);
+        border-top-color: var(--text-main);
+        border-radius: 50%;
+        animation: local-spin 0.7s linear infinite;
+        flex-shrink: 0;
+    }
+
+    /* Same height as a real model card, so the list doesn't jump when content lands. */
+    .local-skeleton-card {
+        height: 68px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background-color: var(--card-bg);
+        animation: local-pulse 1.4s ease-in-out infinite;
+    }
+    .local-skeleton-card:nth-child(2) { animation-delay: 0.15s; }
+    .local-skeleton-card:nth-child(3) { animation-delay: 0.3s; }
+    .local-skeleton-card:nth-child(4) { animation-delay: 0.45s; }
 </style>
 <div style="display: flex; width: 100%; min-height: 100vh;">
     <!-- Left Section: 35% -->
@@ -119,15 +144,40 @@
                     </div>
                 </div>
 
+                <!-- No Recheck button: the page keeps checking on its own while this is showing, so
+                     starting `ollama serve` in a terminal and coming back is all it takes. -->
                 <div id="local-env-banner" style="display:none; margin-top: clamp(1rem, 2vh, 1.5rem); padding: 0.75rem 1rem; border-radius: 8px; background-color: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); display: flex; flex-direction: column; gap: 0.5rem;">
                     <span id="local-env-detail" style="font-family: 'Clash Display', sans-serif; font-size: 0.9rem; color: var(--text-main);"></span>
-                    <button id="local-env-recheck-btn" style="align-self: flex-start; background: transparent; border: 1px solid var(--border); padding: 0.3rem 0.8rem; border-radius: 9999px; font-family: 'Clash Display', sans-serif; font-size: 0.8rem; cursor: pointer; color: var(--text-main);">Recheck</button>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div class="local-spinner" style="width: 12px; height: 12px;"></div>
+                        <span style="font-family: 'Inter', sans-serif; font-size: 0.78rem; color: var(--text-muted);">Checking again…</span>
+                    </div>
+                </div>
+
+                <div id="local-category-header" style="display:none; width: 100%; margin-top: clamp(1rem, 3vh, 2rem); flex-direction: column; gap: 0.2rem;">
+                    <div style="display: flex; align-items: baseline; gap: 0.5rem;">
+                        <span id="local-category-label" style="font-family: 'Clash Display', sans-serif; font-size: 1rem; font-weight: 500; color: var(--text-main);"></span>
+                        <span id="local-category-blurb" style="font-family: 'Inter', sans-serif; font-size: 0.75rem; color: var(--text-muted);"></span>
+                    </div>
+                    <span id="local-category-summary" style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 0.82rem; color: var(--text-muted); line-height: 1.5;"></span>
+                </div>
+
+                <div id="local-models-loader"
+                    style="width: 100%; margin-top: clamp(1rem, 3vh, 2rem); display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem;">
+                        <div class="local-spinner"></div>
+                        <span style="font-family: 'Inter', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Matching models to your hardware…</span>
+                    </div>
+                    <div class="local-skeleton-card"></div>
+                    <div class="local-skeleton-card"></div>
+                    <div class="local-skeleton-card"></div>
+                    <div class="local-skeleton-card"></div>
                 </div>
 
                 <div id="local-models-list"
-                    style="width: 100%; margin-top: clamp(1rem, 3vh, 2rem); display: flex; flex-direction: column; gap: 0.75rem;">
-                    <p style="font-family: 'Inter', sans-serif; font-size: 0.85rem; color: var(--text-muted);">Loading recommendations…</p>
-                </div>
+                    style="width: 100%; margin-top: 0.75rem; display: none; flex-direction: column; gap: 0.75rem;"></div>
+
+                <p id="local-models-note" style="display:none; font-family: 'Inter', sans-serif; font-size: 0.8rem; color: var(--text-muted); margin: 0.75rem 0 0 0; line-height: 1.5;"></p>
 
                 <p id="local-download-error" style="display:none;color:#dc2626;margin:0.75rem 0 0 0;font-size:0.85rem;"></p>
             </div>

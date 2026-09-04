@@ -8,12 +8,21 @@ from core.db import get_connection
 from routers.hardware import collector
 
 from . import download_state
-from .catalog import BACKEND, get_entry
+from .catalog import (
+    BACKEND,
+    CATEGORIES,
+    CATEGORY_ORDER,
+    MAX_PARAMS_B,
+    MODELS_PER_CATEGORY,
+    entries_in_category,
+    get_entry,
+)
 from .download import run_download
 from .environment import OLLAMA_BASE_URL, check_environment
 from .queries import STATUS_READY, delete_model, list_local_models
 from .recommend import build_recommendations
 from .schemas import (
+    CatalogResponse,
     DownloadStartRequest,
     DownloadStartResponse,
     EnvironmentStatus,
@@ -37,6 +46,8 @@ async def get_environment():
 
 @router.get("/recommendations", response_model=RecommendationsResponse)
 async def get_recommendations():
+    """The one category this machine should be offered, and only the models in it that it can
+    actually run. Nothing here needs to be greyed out client-side - see recommend.py."""
     env = await check_environment()
 
     profile = {
@@ -44,7 +55,7 @@ async def get_recommendations():
         "ram": collector.get_ram(),
         "storage": collector.get_storage(),
     }
-    recommendations = build_recommendations(profile)
+    result = build_recommendations(profile)
 
     conn = get_connection()
     try:
@@ -52,10 +63,35 @@ async def get_recommendations():
     finally:
         conn.close()
 
-    for entry in recommendations:
+    for entry in result["models"]:
         entry["installed"] = entry["model_key"] in installed
 
-    return {"environment": env, "recommendations": recommendations}
+    return {"environment": env, **result}
+
+
+@router.get("/catalog", response_model=CatalogResponse)
+def get_catalog():
+    """Every category and every model, independent of the machine this runs on - the hardware-matched
+    subset lives at /recommendations. This exists so the catalog is inspectable over its own route
+    rather than by reading catalog.py, and so the product rules it enforces (the parameter cap, four
+    models per category, each category's memory floor) are visible from outside the process."""
+    return {
+        "backend": BACKEND,
+        "max_params_b": MAX_PARAMS_B,
+        "models_per_category": MODELS_PER_CATEGORY,
+        "categories": [
+            {
+                "key": key,
+                "label": CATEGORIES[key]["label"],
+                "summary": CATEGORIES[key]["summary"],
+                "min_usable_gb": CATEGORIES[key]["min_usable_gb"],
+                "max_usable_gb": CATEGORIES[key]["max_usable_gb"],
+                "floor_gb": CATEGORIES[key]["floor_gb"],
+                "models": entries_in_category(key),
+            }
+            for key in CATEGORY_ORDER
+        ],
+    }
 
 
 @router.get("/", response_model=list[LocalModelRecord])

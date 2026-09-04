@@ -50,7 +50,13 @@
 
             <div style="display: flex; justify-content: space-between; width: 100%;">
                 <span class="dl-stat" id="dl-bytes"></span>
-                <span class="dl-stat" id="dl-speed-eta"></span>
+                <span class="dl-stat" id="dl-speed-eta">Estimating…</span>
+            </div>
+
+            <!-- Elapsed is the one time value that is knowable from the first frame and can never go
+                 missing, unlike a speed sample that needs a second of transfer before it exists. -->
+            <div style="display: flex; justify-content: space-between; width: 100%;">
+                <span class="dl-stat" id="dl-elapsed">Elapsed 0s</span>
             </div>
         </div>
 

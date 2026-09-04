@@ -7,6 +7,7 @@ const percentEl = document.getElementById('dl-percent');
 const phaseEl = document.getElementById('dl-phase');
 const bytesEl = document.getElementById('dl-bytes');
 const speedEtaEl = document.getElementById('dl-speed-eta');
+const elapsedEl = document.getElementById('dl-elapsed');
 const errorEl = document.getElementById('dl-error');
 const readyEl = document.getElementById('dl-ready-message');
 const cancelBtn = document.getElementById('dl-cancel-btn');
@@ -19,11 +20,34 @@ function formatBytes(bytes) {
     return `${mb.toFixed(0)} MB`;
 }
 
-function formatEta(seconds) {
-    if (!seconds || seconds <= 0) return '';
-    const m = Math.floor(seconds / 60);
-    const s = Math.round(seconds % 60);
-    return m > 0 ? `${m}m ${s}s left` : `${s}s left`;
+function formatDuration(seconds) {
+    const total = Math.max(Math.round(seconds), 0);
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+// The elapsed clock ticks locally between events. The backend's `elapsed_seconds` is the authority -
+// each event re-anchors this - but events arrive every 250ms at best and stop entirely during a long
+// verify, and a time readout that freezes looks as broken as one that disappears.
+let elapsedBaseSeconds = 0;
+let elapsedAnchorMs = Date.now();
+let elapsedTimer = null;
+
+function renderElapsed() {
+    const drift = (Date.now() - elapsedAnchorMs) / 1000;
+    elapsedEl.innerText = `Elapsed ${formatDuration(elapsedBaseSeconds + drift)}`;
+}
+
+function startElapsedTicker() {
+    if (elapsedTimer !== null) return;
+    elapsedTimer = setInterval(renderElapsed, 1000);
+}
+
+function stopElapsedTicker() {
+    if (elapsedTimer === null) return;
+    clearInterval(elapsedTimer);
+    elapsedTimer = null;
 }
 
 function applyProgress(state) {
@@ -38,9 +62,28 @@ function applyProgress(state) {
     const total = formatBytes(state.total_bytes);
     bytesEl.innerText = state.total_bytes ? `${downloaded} of ${total}` : downloaded;
 
+    if (typeof state.elapsed_seconds === 'number') {
+        elapsedBaseSeconds = state.elapsed_seconds;
+        elapsedAnchorMs = Date.now();
+        renderElapsed();
+        startElapsedTicker();
+    }
+
+    // The backend clears these deliberately when the transfer pauses (a verify phase has no speed),
+    // and carries the last known pair forward otherwise. Rendering whatever arrived is therefore
+    // correct - but an empty string would collapse the row's width and shift the layout, so the
+    // absence of a figure gets words rather than nothing.
     const speed = state.speed_mbps ? `${state.speed_mbps.toFixed(1)} MB/s` : '';
-    const eta = formatEta(state.eta_seconds);
-    speedEtaEl.innerText = [speed, eta].filter(Boolean).join(' · ');
+    const eta = state.eta_seconds > 0 ? `${formatDuration(state.eta_seconds)} left` : '';
+    const parts = [speed, eta].filter(Boolean);
+    if (parts.length) {
+        speedEtaEl.innerText = parts.join(' · ');
+    } else {
+        // Nothing measured yet is "Estimating…"; nothing to measure (a verify phase) is a dash, not
+        // a promise of a number that isn't coming.
+        const transferring = !state.phase || state.phase === 'downloading';
+        speedEtaEl.innerText = transferring ? 'Estimating…' : '—';
+    }
 }
 
 function fadeToHome() {
@@ -54,16 +97,20 @@ function fadeToHome() {
 }
 
 function showError(detail) {
+    stopElapsedTicker();
     fillEl.style.width = '0%';
+    speedEtaEl.innerText = '—';
     errorEl.innerText = detail || 'The download failed.';
     errorEl.style.display = 'block';
     cancelBtn.innerText = 'Back to setup';
 }
 
 function showReady() {
+    stopElapsedTicker();
     percentEl.innerText = '100%';
     phaseEl.innerText = 'Ready';
     fillEl.style.width = '100%';
+    speedEtaEl.innerText = '—';
     readyEl.style.display = 'block';
     cancelBtn.style.display = 'none';
     fadeToHome();

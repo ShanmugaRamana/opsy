@@ -24,10 +24,21 @@ _state = None
 _subscribers = []
 _cancel_event = None
 _last_publish_at = 0.0
+_started_at = None
+
+
+def _elapsed_seconds():
+    """Seconds since the download was claimed. Unlike speed and ETA this is knowable from the very
+    first frame and can never go missing, which is what makes it the page's stable time readout."""
+    if _started_at is None:
+        return 0
+    return round(time.monotonic() - _started_at)
 
 
 def get_snapshot():
-    return dict(_state) if _state is not None else None
+    if _state is None:
+        return None
+    return {**_state, "elapsed_seconds": _elapsed_seconds()}
 
 
 def is_running():
@@ -44,7 +55,7 @@ def try_begin(model_key, model_ref, display_name):
     does not run until a later loop tick - by which time a second request can already have looked at
     an unclaimed slot and started its own pull, orphaning the first one's cancel event.
     """
-    global _state, _cancel_event, _last_publish_at
+    global _state, _cancel_event, _last_publish_at, _started_at
     if is_running():
         return None
 
@@ -63,6 +74,7 @@ def try_begin(model_key, model_ref, display_name):
     }
     _cancel_event = asyncio.Event()
     _last_publish_at = 0.0
+    _started_at = time.monotonic()
     return _cancel_event
 
 
@@ -89,6 +101,8 @@ def update_progress(*, force=False, **fields):
         return
     _last_publish_at = now
 
+    # speed_mbps / eta_seconds are read back off `_state`, not off `fields`, so a chunk that didn't
+    # recompute them still publishes the last known pair instead of a gap. See download.py.
     _publish({
         "type": "progress",
         "phase": _state["phase"],
@@ -97,6 +111,7 @@ def update_progress(*, force=False, **fields):
         "total_bytes": _state["total_bytes"],
         "speed_mbps": _state["speed_mbps"],
         "eta_seconds": _state["eta_seconds"],
+        "elapsed_seconds": _elapsed_seconds(),
     })
 
 

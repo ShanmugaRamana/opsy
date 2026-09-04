@@ -95,6 +95,8 @@ async def run_download(model_key, cancel_event):
     digest_completed = {}
     bytes_at_last_tick = 0
     time_at_last_tick = time.monotonic()
+    smoothed_mbps = None
+    was_downloading = False
 
     try:
         if entry is None:
@@ -137,19 +139,43 @@ async def run_download(model_key, cancel_event):
                     total_bytes = sum(digest_totals.values()) or None
                     downloaded_bytes = sum(digest_completed.values())
 
+                    # Speed and ETA are only *recomputed* once a second, but they must not be
+                    # *republished as unknown* in between. Ollama emits many progress lines per
+                    # second and update_progress does a plain dict update, so passing None on every
+                    # sub-second chunk overwrote the last good reading - which is what made the time
+                    # on the download page blink in and out roughly three frames out of four. So the
+                    # two keys go into the payload only when this chunk actually produced them.
+                    timing = {}
                     now = time.monotonic()
                     elapsed = now - time_at_last_tick
-                    speed_mbps = None
-                    eta_seconds = None
-                    if elapsed >= 1.0:
+                    is_downloading = status == "downloading"
+
+                    if not is_downloading:
+                        # No transfer during "verifying sha256" and friends, so any figure we kept
+                        # would be stale. Clearing is deliberate here, not an absence of data: a
+                        # frozen "2m 14s left" hanging over the verify tail would be a lie, and the
+                        # phase label already says what is happening.
+                        if was_downloading:
+                            timing = {"speed_mbps": None, "eta_seconds": None}
+                            smoothed_mbps = None
+                    elif elapsed >= 1.0:
                         delta_bytes = downloaded_bytes - bytes_at_last_tick
-                        speed_mbps = round((delta_bytes / elapsed) / (1024 * 1024), 2)
-                        if total_bytes and delta_bytes > 0:
+                        sample_mbps = (delta_bytes / elapsed) / (1024 * 1024)
+                        # Exponential moving average: a single one-second window swings wildly (a
+                        # stalled second reads as an infinite ETA, a burst as nearly zero), and an
+                        # ETA that jumps every tick is unreadable even when it never blanks.
+                        smoothed_mbps = (
+                            sample_mbps if smoothed_mbps is None
+                            else 0.3 * sample_mbps + 0.7 * smoothed_mbps
+                        )
+                        timing["speed_mbps"] = round(smoothed_mbps, 2)
+                        if total_bytes and smoothed_mbps > 0:
                             remaining = max(total_bytes - downloaded_bytes, 0)
-                            eta_seconds = round(remaining / (delta_bytes / elapsed))
+                            timing["eta_seconds"] = round(remaining / (smoothed_mbps * 1024 * 1024))
                         bytes_at_last_tick = downloaded_bytes
                         time_at_last_tick = now
 
+                    was_downloading = is_downloading
                     percent = round((downloaded_bytes / total_bytes) * 100, 1) if total_bytes else 0.0
 
                     download_state.update_progress(
@@ -157,9 +183,8 @@ async def run_download(model_key, cancel_event):
                         percent=percent,
                         downloaded_bytes=downloaded_bytes,
                         total_bytes=total_bytes,
-                        speed_mbps=speed_mbps,
-                        eta_seconds=eta_seconds,
                         force=(status != "downloading"),
+                        **timing,
                     )
 
         final_size = sum(digest_totals.values()) or None
