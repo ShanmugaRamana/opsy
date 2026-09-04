@@ -68,7 +68,7 @@ def main():
 
     # Create the splash screen window
     splash_window = webview.create_window(
-        'Opsy Loading...', 
+        'Zyros Loading...', 
         splash_url,
         frameless=True,    # Remove OS window borders
         width=SPLASH_WIDTH, 

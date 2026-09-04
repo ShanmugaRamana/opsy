@@ -27,22 +27,22 @@ app.use((req, res, next) => {
 
 // Main app route
 app.get('/', (req, res) => {
-  res.render('index', { title: 'Opsy', page: 'pages/home' });
+  res.render('index', { title: 'Zyros', page: 'pages/home' });
 });
 
 // Onboarding route
 app.get('/onboarding', (req, res) => {
-  res.render('index', { title: 'Onboarding - Opsy', page: 'pages/onboarding' });
+  res.render('index', { title: 'Onboarding - Zyros', page: 'pages/onboarding' });
 });
 
 // Setup route
 app.get('/setup', (req, res) => {
-  res.render('index', { title: 'Setup - Opsy', page: 'pages/setup' });
+  res.render('index', { title: 'Setup - Zyros', page: 'pages/setup' });
 });
 
 // Local-model download progress route
 app.get('/download', (req, res) => {
-  res.render('index', { title: 'Downloading - Opsy', page: 'pages/download' });
+  res.render('index', { title: 'Downloading - Zyros', page: 'pages/download' });
 });
 
 // Shutdown route for PC app to close the server

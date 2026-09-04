@@ -12,7 +12,7 @@ class Api:
         route = {'onboarding': '/onboarding', 'setup': '/setup', 'home': ''}.get(target, '')
         target_url = f'{FRONTEND_URL}{route}'
         main_window = webview.create_window(
-            'Opsy',
+            'Zyros',
             target_url,
             width=MAIN_WIDTH,
             height=MAIN_HEIGHT
