@@ -107,6 +107,30 @@ def insert_chat(conn, session_id, role, chat_text):
         )
 
 
+def delete_trailing_user_chats(conn, session_id, chat_text):
+    """Removes the unanswered user rows at the tail of a session that say exactly `chat_text`.
+
+    A turn that fails still leaves its user row behind, so retrying that message would otherwise stack
+    a second copy of the same question in the transcript. Two things keep this narrow: only rows after
+    the last assistant reply are candidates, since a user row a reply followed is part of a completed
+    turn; and only rows matching the message being retried are removed, so retrying one failed message
+    does not quietly erase a different failed message sitting beside it. Returns the rows removed.
+
+    Keyed on chat_id rather than created_at for the same reason list_recent_chats is - the two rows of
+    one turn can share a timestamp, and only the serial is unambiguous."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass('public.chats')")
+        if cur.fetchone()[0] is None:
+            return 0
+
+        cur.execute(
+            "DELETE FROM chats WHERE session_id = %s AND role = 'user' AND chat = %s AND chat_id > "
+            "COALESCE((SELECT MAX(chat_id) FROM chats WHERE session_id = %s AND role = 'assistant'), 0)",
+            (session_id, chat_text, session_id),
+        )
+        return cur.rowcount
+
+
 def list_chats(conn, session_id):
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass('public.chats')")

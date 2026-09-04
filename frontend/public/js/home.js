@@ -317,6 +317,8 @@ function resetChatView() {
     chatLog.style.display = 'none';
     document.querySelector('.main-content').classList.remove('is-chatting');
     trace = null;
+    // Any failure card that was awaiting a retry went out with the transcript.
+    retryingCard = null;
 }
 
 async function switchToSession(sessionId, options = {}) {
@@ -430,6 +432,15 @@ const RUNG_COLORS = { ok: '#2ecc71', fail: '#e74c3c', unknown: '#888' };
 // The live trace for the turn in flight: a panel that exists from the first event, updates its own
 // header as work happens, and collapses once the answer lands.
 let trace = null;
+
+// The message of the most recently sent turn, kept so its failure card can re-send exactly that text
+// instead of asking the user to retype it, and the card currently waiting on a retry it triggered.
+// `turnPending` spans send until the turn resolves one way or the other - wider than
+// `turnInProgress`, which only starts at the backend's "started" event and so would miss a socket
+// that dies before the turn ever begins.
+let inFlightMessage = null;
+let retryingCard = null;
+let turnPending = false;
 
 function startTrace() {
     chatLog.style.display = 'flex';
@@ -708,6 +719,135 @@ function friendlyError(detail) {
     if (message) return message[1];
 
     return text.length > 300 ? `${text.slice(0, 300)}...` : text;
+}
+
+// What to tell the user about a turn that died, and whether sending the same message again could
+// plausibly get a different answer. By the time an error reaches the client the backend has already
+// spent its retry budget, so `retryable` means "a person can do something and try again", not "this
+// will probably work on its own".
+function describeFailure(detail, status) {
+    const text = String(detail || '');
+
+    if (/ollama isn'?t (running|installed)/i.test(text)) {
+        return { title: friendlyError(text), hint: 'Start Ollama, then send this again.', retryable: true };
+    }
+    if (/connection to the backend|agent unreachable/i.test(text)) {
+        return {
+            title: 'Lost the connection to the backend.',
+            hint: 'Check that the Zyros backend is still running, then send this again.',
+            retryable: true,
+        };
+    }
+    if (status === 429 || /rate.?limit|\b429\b|too many requests/i.test(text)) {
+        return {
+            title: friendlyError(text),
+            hint: 'Zyros already retried this a few times. Wait a moment, or pick a different model, then send it again.',
+            retryable: true,
+        };
+    }
+    if (status === 401 || status === 403 || /\b401\b|invalid.*api.?key|authentication/i.test(text)) {
+        return {
+            title: 'That provider rejected the API key.',
+            hint: 'Fix the key on the setup page, then send this again.',
+            retryable: true,
+        };
+    }
+    if (/no stored api key/i.test(text)) {
+        return {
+            title: 'No API key is stored for this provider.',
+            hint: 'Add one on the setup page, then send this again.',
+            retryable: true,
+        };
+    }
+    if (status === 400) {
+        // A rejected request (unknown provider, malformed payload) answers the same way every time,
+        // so a retry button here would only be a second way to fail.
+        return { title: friendlyError(text), hint: 'Pick a different provider or model below and send again.', retryable: false };
+    }
+    return {
+        title: "That didn't go through.",
+        hint: 'The provider stopped responding after a few tries. Your message is still here — send it again when you are ready.',
+        retryable: true,
+    };
+}
+
+// The card that replaces a raw provider error in the transcript: a sentence a person can act on, the
+// technical detail folded away for when it is actually wanted, and a button that re-sends the exact
+// message that failed so the turn is recoverable without retyping it.
+function renderTurnFailure(data) {
+    const { title, hint, retryable } = describeFailure(data.detail, data.status);
+    const message = inFlightMessage;
+
+    // A retry that failed again is one failure, not two: its card goes so the new one takes its
+    // place, instead of leaving a dead "Sending again..." button stranded above it.
+    if (retryingCard) {
+        retryingCard.card.remove();
+        retryingCard = null;
+    }
+
+    chatLog.style.display = 'flex';
+    document.querySelector('.main-content').classList.add('is-chatting');
+
+    const card = document.createElement('div');
+    card.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.8rem; line-height: 1.45; padding: 0.7rem 0.9rem; margin: 0.25rem 0; border: 1px solid var(--border); border-left: 3px solid #c0392b; border-radius: 8px; background: var(--card-bg);';
+
+    const heading = document.createElement('div');
+    heading.style.cssText = 'font-weight: 600; color: #c0392b; margin-bottom: 0.25rem;';
+    heading.innerText = title;
+    card.appendChild(heading);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'opacity: 0.8;';
+    body.innerText = hint;
+    card.appendChild(body);
+
+    if (data.detail) {
+        const details = document.createElement('details');
+        details.style.cssText = 'margin-top: 0.45rem; font-size: 0.72rem;';
+        const summary = document.createElement('summary');
+        summary.style.cssText = 'cursor: pointer; opacity: 0.65;';
+        summary.innerText = 'Technical details';
+        details.appendChild(summary);
+
+        const raw = document.createElement('div');
+        raw.style.cssText = 'font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin-top: 0.3rem; padding: 0.4rem 0.5rem; border-radius: 6px; background: var(--bg-color);';
+        raw.innerText = String(data.detail);
+        details.appendChild(raw);
+        card.appendChild(details);
+    }
+
+    if (retryable && message) {
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; margin-top: 0.55rem;';
+
+        const retry = document.createElement('button');
+        retry.innerText = 'Retry';
+        retry.style.cssText = 'padding: 0.3rem 0.8rem; border-radius: 6px; border: none; background: var(--text-main); color: var(--bg-color); cursor: pointer; font-family: inherit; font-size: 0.75rem;';
+        const reset = () => {
+            retry.disabled = false;
+            retry.style.opacity = '1';
+            retry.style.cursor = 'pointer';
+            retry.innerText = 'Retry';
+        };
+
+        retry.addEventListener('click', () => {
+            retry.disabled = true;
+            retry.style.opacity = '0.5';
+            retry.style.cursor = 'default';
+            retry.innerText = 'Sending again...';
+            // The card survives until the retried turn actually starts, so a click that never reaches
+            // the backend leaves the failure on screen - and `reset` puts the button back when the
+            // send was refused rather than attempted.
+            retryingCard = { card, reset };
+            sendTurn(message, { isRetry: true });
+        });
+        actions.appendChild(retry);
+        card.appendChild(actions);
+    }
+
+    chatLog.appendChild(card);
+    scrollChatToBottom();
+    return card;
 }
 
 
@@ -1163,6 +1303,12 @@ function handleOrchestratorEvent(rawEvent) {
     switch (data.type) {
         case 'started':
             setTurnInProgress(true);
+            // The failed turn's card is replaced by the retry's own trace, so the transcript shows
+            // one attempt rather than a stack of dead ends.
+            if (retryingCard) {
+                retryingCard.card.remove();
+                retryingCard = null;
+            }
             startTrace();
             break;
         case 'model_loading':
@@ -1189,6 +1335,13 @@ function handleOrchestratorEvent(rawEvent) {
             }
             break;
         case 'already_running':
+            turnPending = false;
+            // Nothing was attempted, so the failure card stays exactly as it was, button and all -
+            // the retry is still available once the other chat finishes.
+            if (retryingCard) {
+                retryingCard.reset();
+                retryingCard = null;
+            }
             showRunningBanner(data.session_id, data.session_name);
             break;
         case 'classified': {
@@ -1223,6 +1376,7 @@ function handleOrchestratorEvent(rawEvent) {
             finishTraceRow(data);
             break;
         case 'final': {
+            turnPending = false;
             setTurnInProgress(false);
             // The general path doesn't stream, so its thinking arrives whole; keep it in the panel.
             if (data.thinking && trace && !trace.thinking.innerText) {
@@ -1240,11 +1394,27 @@ function handleOrchestratorEvent(rawEvent) {
             break;
         }
         case 'error':
+            turnPending = false;
             setTurnInProgress(false);
             closeTrace(true);
-            appendMessage('error', friendlyError(data.detail));
+            renderTurnFailure(data);
             break;
     }
+}
+
+// A socket that closes with a turn still outstanding is the one failure the backend cannot report,
+// since its own error event would have travelled down this socket. Without this the UI would sit on
+// a spinning trace forever; instead the turn ends the same way any other failure does, with a card
+// that can send it again.
+function handleSocketClose(event) {
+    // A close from a socket that has already been replaced - a retry opens a fresh one the moment the
+    // old connection drops - says nothing about the turn now in flight on its successor.
+    if (event && event.target !== orchestratorSocket) return;
+    if (!turnPending) return;
+    turnPending = false;
+    setTurnInProgress(false);
+    closeTrace(true);
+    renderTurnFailure({ detail: 'The connection to the backend closed before this turn finished.' });
 }
 
 function ensureSocket(onReady) {
@@ -1252,12 +1422,48 @@ function ensureSocket(onReady) {
         onReady();
         return;
     }
-    if (!orchestratorSocket || orchestratorSocket.readyState === WebSocket.CLOSED) {
+    // CLOSING counts as gone: a retry is sent right after the connection dropped, and waiting on
+    // `open` from a socket that is on its way out would hang the turn forever.
+    if (
+        !orchestratorSocket
+        || orchestratorSocket.readyState === WebSocket.CLOSED
+        || orchestratorSocket.readyState === WebSocket.CLOSING
+    ) {
         orchestratorSocket = new WebSocket(WS_URL);
         orchestratorSocket.addEventListener('message', handleOrchestratorEvent);
-        orchestratorSocket.addEventListener('error', () => appendMessage('error', 'Connection error.'));
+        // A socket error is always followed by a close, so a turn killed by the connection is
+        // reported once, from the close handler, as a retryable failure rather than twice.
+        orchestratorSocket.addEventListener('error', () => {
+            if (!turnPending) appendMessage('error', 'Connection error.');
+        });
+        orchestratorSocket.addEventListener('close', handleSocketClose);
     }
     orchestratorSocket.addEventListener('open', onReady, { once: true });
+}
+
+// Both a first attempt and a retry go through here, so the retry sends byte-for-byte the same turn
+// the user already saw fail - only `is_retry` differs, which tells the backend the failed attempt's
+// unanswered user row is being replaced rather than added to. `session_id` is read at send time, not
+// captured: a turn that failed on a brand new chat already created its session, and the retry has to
+// land in that session instead of opening a second one.
+function sendTurn(message, options = {}) {
+    inFlightMessage = message;
+    turnPending = true;
+
+    ensureSocket(() => {
+        orchestratorSocket.send(JSON.stringify({
+            provider: selectedProvider,
+            model_id: selectedModelId,
+            message,
+            session_id: currentSessionId,
+            is_retry: Boolean(options.isRetry),
+        }));
+
+        if (currentSessionId && sessionsById[currentSessionId]) {
+            sessionsById[currentSessionId].updated_at = new Date().toISOString();
+            renderSessionList();
+        }
+    });
 }
 
 function sendMessage() {
@@ -1266,20 +1472,7 @@ function sendMessage() {
 
     chatInput.value = '';
     appendMessage('user', message);
-
-    ensureSocket(() => {
-        orchestratorSocket.send(JSON.stringify({
-            provider: selectedProvider,
-            model_id: selectedModelId,
-            message,
-            session_id: currentSessionId,
-        }));
-        
-        if (currentSessionId && sessionsById[currentSessionId]) {
-            sessionsById[currentSessionId].updated_at = new Date().toISOString();
-            renderSessionList();
-        }
-    });
+    sendTurn(message);
 }
 
 sendBtn.addEventListener('click', sendMessage);

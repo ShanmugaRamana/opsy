@@ -11,7 +11,14 @@ from core.db import get_connection
 from routers.byok.queries import get_key
 from routers.models.local.runtime import LocalProviderUnavailable, resolve_endpoint
 from routers.models.providers import ALL_PROVIDERS, is_local
-from routers.sessions.queries import create_session, get_session, insert_chat, rename_session, touch_session
+from routers.sessions.queries import (
+    create_session,
+    delete_trailing_user_chats,
+    get_session,
+    insert_chat,
+    rename_session,
+    touch_session,
+)
 
 from .agents.router import AGENT_WS_PATHS
 from .classify import classify_intent
@@ -61,6 +68,16 @@ def _insert_chat_sync(session_id, role, chat_text):
     try:
         insert_chat(conn, session_id, role, chat_text)
         conn.commit()
+    finally:
+        conn.close()
+
+
+def _drop_unanswered_user_chats_sync(session_id, chat_text):
+    conn = get_connection()
+    try:
+        removed = delete_trailing_user_chats(conn, session_id, chat_text)
+        conn.commit()
+        return removed
     finally:
         conn.close()
 
@@ -204,6 +221,17 @@ async def run_orchestrator(request: OrchestratorRequest):
     # be the same either way - this ordering just makes the intent explicit.) A brand new session has
     # nothing to remember and skips the call entirely.
     history = [] if is_new_session else await fetch_short_term(session_id)
+
+    # A retry re-sends a message whose turn already failed, and that attempt left a user row with no
+    # reply behind it. Clearing those first keeps one row per question no matter how many times it is
+    # retried - otherwise the replayed transcript would show the same message once per attempt, and
+    # the short-term window would over-fetch to step past all of them.
+    if request.is_retry and not is_new_session:
+        removed = await anyio.to_thread.run_sync(
+            _drop_unanswered_user_chats_sync, session_id, request.message
+        )
+        if removed:
+            logger.info(f"retry: dropped {removed} unanswered user row(s) from session {session_id}")
 
     await anyio.to_thread.run_sync(_insert_chat_sync, session_id, "user", request.message)
 

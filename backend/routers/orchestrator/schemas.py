@@ -8,6 +8,11 @@ class OrchestratorRequest(BaseModel):
     # None starts a brand new session; the orchestrator creates and returns one via the
     # `session_created` event. Set to continue logging turns under an existing session.
     session_id: int | None = None
+    # True when this is the same message a turn that already failed was sent with - the client's
+    # retry button. The turn runs identically either way; the flag only says that the failed
+    # attempt's unanswered user row is being replaced rather than added to, so a message retried
+    # three times appears once in the transcript instead of four times.
+    is_retry: bool = False
 
 
 class CommandRun(BaseModel):
