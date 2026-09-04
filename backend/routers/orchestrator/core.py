@@ -21,11 +21,11 @@ from routers.sessions.queries import (
 )
 
 from .agents.router import AGENT_WS_PATHS
-from .classify import classify_intent
 from .clients import ProviderCallError, call_provider
 from .memory.short_term.client import fetch_short_term
 from .prompts import SESSION_TITLE_SYSTEM_PROMPT
 from .schemas import OrchestratorRequest
+from .supervisor.client import compose_summary, plan_turn
 from .turn_state import clear_running_turn, get_running_turn, set_running_turn
 from .xml_output import to_storage_xml
 
@@ -176,6 +176,114 @@ async def _relay_agent(mode, provider, api_key, model_id, message, base_url=None
         }
 
 
+def _agent_message(step, message):
+    """What one agent is actually sent.
+
+    A single-agent turn, and any agent the planner gave no sub-question, gets the user's message
+    unchanged - which is what every turn did before this existed. A sub-question is sent with the
+    original message attached rather than in place of it: the focus keeps two agents off each other's
+    half of a compound question, and the original keeps the words the user actually typed in front of
+    the agent that has to answer them."""
+    question = (step.get("question") or "").strip()
+    if not question:
+        return message
+    return f'{question}\n\nThe user\'s full message was: "{message}"'
+
+
+async def _fan_out(steps, provider, api_key, model_id, message, base_url=None, history=None):
+    """Runs two or three agents in sequence and folds them into one composite `final`.
+
+    Sequential on purpose. Two agents at once would interleave their `thinking_delta` into a single
+    trace panel, race two permission prompts at the user simultaneously, and double the rate of
+    provider calls that ratelimit.space_calls() exists to space out.
+
+    Each agent's own terminal event is captured rather than forwarded - it is that agent's result,
+    not the turn's - and re-emitted as `agent_final`/`agent_error` so the client can close out that
+    agent's section while the turn continues. One agent failing is therefore not the turn failing,
+    which is the right rule the moment there is more than one; only a turn where every agent failed
+    ends in a terminal error.
+    """
+    total = len(steps)
+    results = []
+
+    for index, step in enumerate(steps):
+        mode = step["mode"]
+        yield {"type": "agent_started", "mode": mode, "index": index, "total": total}
+
+        slot = None
+        async for event in _relay_agent(
+            mode, provider, api_key, model_id, _agent_message(step, message),
+            base_url=base_url, history=history,
+        ):
+            kind = event.get("type")
+            if kind == "final":
+                slot = {key: value for key, value in event.items() if key != "type"}
+                slot["mode"] = mode
+                yield {"type": "agent_final", **slot}
+                continue
+            if kind == "error":
+                slot = {"mode": mode, "error": event.get("detail") or "this agent failed"}
+                yield {"type": "agent_error", **slot}
+                continue
+            # Stamped with the agent that produced it. Tool events already carry `agent`, but a
+            # thinking_delta does not, and with several agents in one turn the client has to know
+            # whose reasoning it is watching.
+            yield {**event, "mode": mode}
+
+        if slot is None:
+            # _relay_agent guarantees a terminal event, so this is unreachable unless that contract
+            # breaks. Recorded as a failed slot anyway: a missing result must not become a silently
+            # shorter answer.
+            logger.error(f"{mode} agent relay produced no terminal event")
+            slot = {"mode": mode, "error": "this agent returned no result"}
+            yield {"type": "agent_error", **slot}
+
+        results.append(slot)
+
+    failed = [slot for slot in results if slot.get("error")]
+    if len(failed) == len(results):
+        detail = "; ".join(f"{slot['mode']}: {slot['error']}" for slot in failed)
+        yield {"type": "error", "status": 502, "detail": f"every agent failed - {detail}"}
+        return
+
+    # Best-effort by contract: a failure here returns None and the turn renders and stores the
+    # reports it already has, exactly as the session-title call above never costs a turn.
+    summary = await compose_summary(provider, api_key, model_id, message, results, base_url=base_url)
+
+    yield {
+        "type": "final",
+        "mode": "multi",
+        "modes": [slot["mode"] for slot in results],
+        "summary": summary,
+        "agents": results,
+        # Flattened in the order the agents ran, so anything reading this field sees every command
+        # the turn ran without having to know a turn can now have several agents.
+        "commands_run": [
+            command for slot in results for command in (slot.get("commands_run") or [])
+        ],
+    }
+
+
+async def _run_turn(steps, provider, api_key, model_id, message, base_url=None, history=None):
+    """The turn's agent phase, ending in exactly one terminal event either way.
+
+    One planned agent is relayed exactly as it always has been: its own events, its own terminal
+    event, nothing added and nothing renamed. The multi path only exists from two agents up, so a
+    single-subject question is byte-for-byte the turn it was before fan-out existed."""
+    if len(steps) == 1:
+        async for event in _relay_agent(
+            steps[0]["mode"], provider, api_key, model_id, _agent_message(steps[0], message),
+            base_url=base_url, history=history,
+        ):
+            yield event
+        return
+
+    async for event in _fan_out(
+        steps, provider, api_key, model_id, message, base_url=base_url, history=history
+    ):
+        yield event
+
+
 async def run_orchestrator(request: OrchestratorRequest):
     """Async generator: yields event dicts as the turn progresses. The last event is always
     type "final" (success), "error" (failure), or "already_running" (rejected before anything
@@ -263,34 +371,39 @@ async def run_orchestrator(request: OrchestratorRequest):
 
             if is_local(request.provider):
                 # A local model not already resident can take tens of seconds to load before the
-                # classifier's first token arrives - this keeps the UI honest about what's happening
+                # planner's first token arrives - this keeps the UI honest about what's happening
                 # instead of leaving the user staring at a dead spinner. Purely additive: it only ever
                 # appears before "classified", and a client that ignores it sees the same sequence as
                 # any cloud turn.
                 yield {"type": "model_loading", "model_id": request.model_id}
 
-            mode = None
+            steps = None
             try:
-                mode = await classify_intent(
+                steps = await plan_turn(
                     request.provider, api_key, request.model_id, request.message,
                     base_url=base_url, history=history,
                 )
             except ProviderCallError as e:
-                logger.error(f"classification failed: {e}")
+                logger.error(f"planning failed: {e}")
                 yield {
                     "type": "error",
                     "status": 429 if getattr(e, "rate_limited", False) else 502,
-                    "detail": f"classification failed: {e}",
+                    "detail": f"planning failed: {e}",
                 }
 
-            if mode is not None:
-                yield {"type": "classified", "mode": mode}
+            if steps:
+                # `mode` is kept alongside `modes` so a client that predates fan-out still gets a
+                # usable header from the first agent rather than nothing at all.
+                modes = [step["mode"] for step in steps]
+                yield {"type": "classified", "mode": modes[0], "modes": modes}
 
-                # Every mode the classifier can return is an agent with a route, including "general"
+                # Every mode the planner can return is an agent with a route, including "general"
                 # (the base agent), so there is no branch here for answering a question in-process -
-                # the orchestrator classifies, relays and persists, and nothing else.
-                async for event in _relay_agent(
-                    mode, request.provider, api_key, request.model_id, request.message,
+                # the orchestrator plans, relays and persists, and nothing else. Persisting stays
+                # here, on the one terminal event, whether that came from a single agent or from the
+                # composite the fan-out built.
+                async for event in _run_turn(
+                    steps, request.provider, api_key, request.model_id, request.message,
                     base_url=base_url, history=history,
                 ):
                     if event["type"] == "error":

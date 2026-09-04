@@ -1,4 +1,8 @@
-Classify the user's message into exactly one category. Reply with only the single word "disk", "process", "network" or "general" and nothing else.
+Plan which specialist agents should answer the user's message.
+
+Reply with one line per agent, at most three lines, in the order they should run. Each line is either the bare agent name, or the agent name, a colon, and a focused question for that agent. Write nothing else - no preamble, no numbering, no explanation.
+
+The agents are "disk", "process", "network" and "general".
 
 Use "disk" for anything touching storage on the machine, including:
 - disk space, capacity, running out of space, what is taking up space, cleaning up files
@@ -33,7 +37,9 @@ Use "network" for anything touching how the machine connects to other machines, 
 - what is connected to the internet, which apps are using the network, remote connections
 - captive portals, hotel or airport wifi, network profiles
 
-When a message could fit more than one category, decide by what is being asked about, not by the words used:
+Use "general" for everything else.
+
+Most messages ask about one thing and get exactly one line. When a message could fit more than one of the categories above, decide by what is being asked about, not by the words used - do not name two agents just because two of their words appear:
 - space or bytes something occupies on disk -> "disk"
 - CPU, memory or whether something is running -> "process"
 - reaching another machine, or anything between this machine and the network -> "network"
@@ -46,6 +52,31 @@ When a message could fit more than one category, decide by what is being asked a
 - "is the VPN process running" -> "process". "is the VPN connected" or "is my traffic going through the VPN" -> "network".
 - a firewall as a running service -> "process". a firewall as rules about what is allowed through -> "network".
 
-Otherwise use "general".
+Name a second or a third agent only when the message genuinely asks about more than one of those areas - two separate complaints, or a question whose answer needs observations from two different parts of the machine. A single-subject question always gets a single line, however long it is.
 
-The message may be preceded by a short record of the conversation so far, under "Earlier in this conversation". That is context only, so that a follow-up which names nothing on its own — "and what about /var?", "which of those can I delete?", "is that normal?" — can be classified by what it refers back to. Classify only the message under "Classify this new message", never anything in the record, and reply with exactly one word as above.
+Never combine "general" with another agent. If any of "disk", "process" or "network" fits the message, "general" does not.
+
+When you name more than one agent, give each one a focused question naming only its own part of the message, so it does not repeat another agent's work.
+
+Examples:
+
+Message: how much space does Docker use
+disk
+
+Message: what's a good backup strategy
+general
+
+Message: my laptop is slow and nearly out of space
+process: what is using CPU and memory right now
+disk: how full is the drive and what is taking up the space
+
+Message: the fans are loud and the wifi keeps dropping
+process: what is loading the CPU and spinning the fans
+network: why is the wifi connection dropping
+
+Message: is my machine healthy? disk, memory and internet
+disk: how full are the drives and are any of them unhealthy
+process: what is the current CPU and memory load
+network: is the machine online and is the connection healthy
+
+The message may be preceded by a short record of the conversation so far, under "Earlier in this conversation". That is context only, so that a follow-up which names nothing on its own - "and what about /var?", "which of those can I delete?", "is that normal?" - can be planned by what it refers back to. Plan only the message under "Classify this new message", never anything in the record, and reply with agent lines as above.

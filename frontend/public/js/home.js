@@ -308,6 +308,10 @@ function renderStoredTurn(turn) {
         appendMessage('user', turn.content || '');
         return;
     }
+    if (turn.mode === 'multi') {
+        renderMultiTurn(turn);
+        return;
+    }
     const renderer = REPORT_RENDERERS[turn.mode];
     if (renderer) {
         renderer(turn[`${turn.mode}_report`]);
@@ -524,8 +528,12 @@ function appendThinkingDelta(text) {
     scrollChatToBottom();
 }
 
+// Identifies the row a tool_result belongs to. Every field that can distinguish two calls is in the
+// key: the agent, because a turn can now run several and they would otherwise share rows; and the
+// label, because every approved ad-hoc command arrives as the same `request_command` with a null
+// path, so two of them in one turn used to collide and finish each other's row.
 function traceRowKey(data) {
-    return `${data.command}::${data.path || ''}`;
+    return `${data.agent || ''}::${data.command}::${data.label || ''}::${data.path || ''}`;
 }
 
 // ---- Command approval ----
@@ -1296,7 +1304,113 @@ function renderNetworkReport(report) {
 
 // One entry per agent that renders a structured report, keyed by the orchestrator's `mode`. Adding a
 // fifth agent means adding a render function and a line here, not another branch in the switch below.
+// "multi" is deliberately absent: it is a container of these, not a report of its own.
 const REPORT_RENDERERS = { disk: renderDiskReport, process: renderProcessReport, network: renderNetworkReport };
+
+// How each agent is named to the user, in the three places a name is needed: the trace header while
+// it works, the phrase joined into a multi-agent header, and the heading above its report card.
+const AGENT_TRACE_HEADERS = {
+    disk: 'Checking storage',
+    process: "Checking what's running",
+    network: 'Checking the network',
+    general: 'Thinking it through',
+};
+const AGENT_SUBJECTS = {
+    disk: 'storage',
+    process: "what's running",
+    network: 'the network',
+    general: 'the rest',
+};
+const AGENT_CARD_TITLES = {
+    disk: 'Storage',
+    process: 'Running now',
+    network: 'Network',
+    general: 'Answer',
+};
+
+function joinSubjects(parts) {
+    if (parts.length <= 1) return parts[0] || '';
+    return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+// The header for the whole turn, from however many agents were planned for it.
+function classifiedHeader(modes) {
+    if (!modes || modes.length === 0) return 'Answering';
+    if (modes.length === 1) return AGENT_TRACE_HEADERS[modes[0]] || 'Answering';
+    return `Checking ${joinSubjects(modes.map((mode) => AGENT_SUBJECTS[mode] || mode))}`;
+}
+
+// Multi-agent turns only. Each agent gets its own heading and its own thinking block inside the one
+// trace panel, so several agents' reasoning reads as several sections rather than one run-on block -
+// `trace.thinking` is repointed at the new block, which is all appendThinkingDelta needs to follow.
+function startAgentSection(data) {
+    const active = ensureTrace();
+
+    const heading = document.createElement('div');
+    heading.style.cssText = 'margin: 0.5rem 0 0.15rem; font-weight: 600; opacity: 0.85; letter-spacing: 0.02em;';
+    heading.innerText = `${data.index + 1}/${data.total} · ${AGENT_CARD_TITLES[data.mode] || data.mode}`;
+    active.commands.appendChild(heading);
+
+    const thinking = document.createElement('div');
+    thinking.style.cssText = 'white-space: pre-wrap; font-style: italic; padding: 0.2rem 0; line-height: 1.45;';
+    active.commands.appendChild(thinking);
+    active.thinking = thinking;
+
+    setTraceHeader(AGENT_TRACE_HEADERS[data.mode] || 'Working');
+    scrollChatToBottom();
+}
+
+// One agent failing does not fail the turn, so its failure is reported where it happened rather than
+// replacing the answer - the agents that did work still have something to say.
+function appendAgentTraceFailure(data) {
+    const active = ensureTrace();
+    const line = document.createElement('div');
+    line.style.cssText = 'padding: 0.15rem 0; color: #c0392b; opacity: 0.9;';
+    line.innerText = `${AGENT_CARD_TITLES[data.mode] || data.mode}: ${friendlyError(data.error)}`;
+    active.commands.appendChild(line);
+    scrollChatToBottom();
+}
+
+function appendAgentHeading(mode) {
+    appendBlock(
+        AGENT_CARD_TITLES[mode] || mode,
+        'font-size: 0.72rem; padding: 0.6rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;',
+    );
+}
+
+// A turn several agents answered: the composed paragraph, then each agent's own card in the order
+// they ran, drawn by the very same renderers a single-agent turn uses.
+function renderMultiTurn(turn) {
+    if (turn.summary) appendMessage('assistant', turn.summary);
+
+    (turn.agents || []).forEach((slot) => {
+        appendAgentHeading(slot.mode);
+
+        if (slot.error) {
+            appendBlock(
+                `This check could not finish: ${friendlyError(slot.error)}`,
+                'font-size: 0.8rem; padding: 0.2rem 0.9rem; line-height: 1.5; color: #c0392b;',
+            );
+            return;
+        }
+
+        const renderer = REPORT_RENDERERS[slot.mode];
+        if (renderer) {
+            renderer(slot[`${slot.mode}_report`]);
+        } else {
+            appendMessage('assistant', slot.content || '');
+        }
+    });
+}
+
+// A salvaged answer anywhere in the turn keeps the trace open, for the same reason one does in a
+// single-agent turn: the commands that ran are more trustworthy than the report recovered from prose.
+function multiTurnSalvaged(turn) {
+    return (turn.agents || []).some((slot) => {
+        const report = slot[`${slot.mode}_report`];
+        return Boolean(report && report.salvaged);
+    });
+}
 
 function handleOrchestratorEvent(rawEvent) {
     let data;
@@ -1350,16 +1464,27 @@ function handleOrchestratorEvent(rawEvent) {
             }
             showRunningBanner(data.session_id, data.session_name);
             break;
-        case 'classified': {
-            const headers = {
-                disk: 'Checking storage',
-                process: "Checking what's running",
-                network: 'Checking the network',
-                general: 'Thinking it through',
-            };
-            setTraceHeader(headers[data.mode] || 'Answering');
+        case 'classified':
+            // `modes` is every agent planned for this turn; `mode` is the first of them, kept for a
+            // client that predates fan-out and read only that.
+            setTraceHeader(classifiedHeader(data.modes || [data.mode]));
             break;
-        }
+        case 'agent_started':
+            startAgentSection(data);
+            break;
+        case 'agent_final':
+            // Nothing is drawn in the transcript here: the composite `final` carries every agent's
+            // result, so all the cards are drawn together, in plan order, once the turn is actually
+            // done. The agent's own thinking block is filled in for exactly the reason the
+            // single-agent guard below exists - a round that never streamed its reasoning would
+            // otherwise leave this agent's section of the panel blank.
+            if (data.thinking && trace && !trace.thinking.innerText) {
+                trace.thinking.innerText = data.thinking;
+            }
+            break;
+        case 'agent_error':
+            appendAgentTraceFailure(data);
+            break;
         case 'thinking_delta':
             appendThinkingDelta(data.text);
             break;
@@ -1391,6 +1516,11 @@ function handleOrchestratorEvent(rawEvent) {
             // still lands rather than being lost between the two paths.
             if (data.thinking && trace && !trace.thinking.innerText) {
                 trace.thinking.innerText = data.thinking;
+            }
+            if (data.mode === 'multi') {
+                closeTrace(multiTurnSalvaged(data));
+                renderMultiTurn(data);
+                break;
             }
             const report = data[`${data.mode}_report`];
             const salvaged = Boolean(report && report.salvaged);

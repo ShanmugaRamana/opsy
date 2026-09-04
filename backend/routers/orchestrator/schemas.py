@@ -163,15 +163,41 @@ class NetworkReport(BaseModel):
     salvaged: bool = False
 
 
+class AgentResult(BaseModel):
+    """One agent's slice of a turn several agents answered - its own `final` event, minus the event
+    type. Exactly one of the three reports, `content` (the base agent) or `error` is set."""
+
+    mode: str
+    thinking: str | None = None
+    content: str | None = None
+    disk_report: DiskReport | None = None
+    process_report: ProcessReport | None = None
+    network_report: NetworkReport | None = None
+    commands_run: list[CommandRun] = []
+    # Set when this agent failed while others succeeded. One agent failing does not fail the turn, so
+    # the answer has to be able to say which part of the question went unanswered.
+    error: str | None = None
+
+
 class OrchestratorResponse(BaseModel):
     provider: str
     model_id: str
     session_id: int | None = None
+    # "disk" | "process" | "network" | "general", or "multi" when several agents answered - in which
+    # case the reports are in `agents` rather than in the fields below.
     mode: str
+    # Every agent that ran, in order. A single-agent turn carries its one mode here too, so a client
+    # can read this field alone rather than special-casing the two shapes.
+    modes: list[str] = []
+    # The paragraph composed over several agents' findings. Null on a single-agent turn, and also
+    # whenever composing it failed - the reports are the answer, and they stand without it.
+    summary: str | None = None
+    agents: list[AgentResult] = []
     thinking: str | None = None
     content: str | None = None
     raw_xml: str | None = None
     disk_report: DiskReport | None = None
     process_report: ProcessReport | None = None
     network_report: NetworkReport | None = None
+    # On a multi turn this is every agent's commands, flattened in the order they ran.
     commands_run: list[CommandRun] = []

@@ -21,6 +21,8 @@ def _to_turn(row):
         mode=parsed.get("mode"),
         thinking=parsed.get("thinking"),
         content=parsed.get("content"),
+        summary=parsed.get("summary"),
+        agents=parsed.get("agents", []),
         disk_report=parsed.get("disk_report"),
         process_report=parsed.get("process_report"),
         network_report=parsed.get("network_report"),

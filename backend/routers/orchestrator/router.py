@@ -57,16 +57,23 @@ async def run(payload: OrchestratorRequest):
     if final_event is None:
         raise HTTPException(status_code=502, detail="orchestrator produced no result")
 
+    mode = final_event["mode"]
     return OrchestratorResponse(
         provider=payload.provider,
         model_id=payload.model_id,
         session_id=final_event.get("session_id"),
-        mode=final_event["mode"],
+        mode=mode,
+        # A single-agent turn has no `modes` of its own, so one is written from its mode here rather
+        # than leaving this empty - a caller reading `modes` should never have to fall back to `mode`.
+        modes=final_event.get("modes") or [mode],
+        summary=final_event.get("summary"),
+        agents=final_event.get("agents", []),
         thinking=final_event.get("thinking"),
         content=final_event.get("content"),
         raw_xml=final_event.get("raw_xml"),
         disk_report=final_event.get("disk_report"),
         process_report=final_event.get("process_report"),
+        network_report=final_event.get("network_report"),
         commands_run=final_event.get("commands_run", []),
     )
 

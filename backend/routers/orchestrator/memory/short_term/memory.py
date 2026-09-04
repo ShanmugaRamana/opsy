@@ -174,6 +174,47 @@ def _condense_report(mode, report):
     return "\n".join(lines)
 
 
+def _condense_multi(parsed):
+    """A turn several agents answered -> the one message that stands for it in history.
+
+    The composed summary leads, because it is the answer the user was actually given, and each
+    agent's own condensing follows it. Without this branch a multi turn would fall through to the
+    `content` path, condense to nothing, and be dropped from the window entirely - so "which of those
+    can I delete?" would have no memory of the turn that produced "those".
+
+    A failed agent contributes one line. The model needs to know that part of the previous question
+    went unanswered; silence would let it treat the gap as a clean bill of health.
+    """
+    lines = []
+
+    summary = (parsed.get("summary") or "").strip()
+    if summary:
+        lines.append(summary)
+
+    for slot in parsed.get("agents") or []:
+        mode = slot.get("mode") or "general"
+
+        error = (slot.get("error") or "").strip()
+        if error:
+            lines.append(f"[{mode} check] could not complete: {error}")
+            continue
+
+        if mode not in _REPORT_SHAPES:
+            content = (slot.get("content") or "").strip()
+            if content:
+                lines.append(content)
+            continue
+
+        report = slot.get(f"{mode}_report")
+        if not isinstance(report, dict) or not report:
+            continue
+        condensed = _condense_report(mode, report)
+        if condensed:
+            lines.append(condensed)
+
+    return "\n".join(lines)
+
+
 def condense_assistant(chat_xml):
     """One stored assistant row -> the single plain-text message that stands for it in history.
 
@@ -186,6 +227,10 @@ def condense_assistant(chat_xml):
     out; it is trace data for the UI, and replaying command output would exhaust the window to tell
     the agent something it can simply check again.
 
+    A multi turn is condensed from all of its parts - see _condense_multi. It is several times the
+    length of a single-agent turn and is then cut by the same MAX_HISTORY_CHARS truncation, which is
+    the right order: the composed summary and the first agent's headline numbers survive the cut.
+
     Returns None when the row yields nothing usable, which drops the pair rather than feeding the
     model a broken turn.
     """
@@ -196,6 +241,9 @@ def condense_assistant(chat_xml):
         return None
 
     mode = parsed.get("mode", "general")
+    if mode == "multi":
+        return _condense_multi(parsed) or None
+
     if mode not in _REPORT_SHAPES:
         return (parsed.get("content") or "").strip() or None
 

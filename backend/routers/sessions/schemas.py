@@ -19,9 +19,15 @@ class ChatTurn(BaseModel):
     chat_id: int
     role: str
     created_at: datetime
+    # "multi" here means several agents answered the turn: the reports are in `agents`, one entry per
+    # agent, rather than in the single-report fields below.
     mode: str | None = None
     thinking: str | None = None
     content: str | None = None
+    summary: str | None = None
+    # Left as loose dicts, like the reports beside them - this model exists to carry the orchestrator's
+    # own event shape to the frontend, not to re-validate it on the way out.
+    agents: list = []
     disk_report: dict | None = None
     process_report: dict | None = None
     network_report: dict | None = None

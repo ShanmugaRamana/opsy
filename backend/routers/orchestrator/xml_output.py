@@ -10,16 +10,16 @@ logger = logging.getLogger("orchestrator")
 NO_ANSWER_CONTENT = "The model finished without returning a readable answer. Try asking again."
 
 # Marks a stored chat row as a turn this module synthesized rather than one the model wrote: the
-# three report modes always, and "general" only when the base agent ran commands worth keeping (see
-# to_storage_xml). A plain general answer is still stored as the model's own unmarked <response>,
-# which is what parse_response already handles - and every row written before this attribute existed
-# reads back through that same path unchanged.
+# three report modes always, "multi" always (a turn several agents answered), and "general" only when
+# the base agent ran commands worth keeping (see to_storage_xml). A plain general answer is still
+# stored as the model's own unmarked <response>, which is what parse_response already handles - and
+# every row written before this attribute existed reads back through that same path unchanged.
 #
 # This alternation has to list every mode that can be written with one. A mode missing from it does
 # not raise: the stored turn silently falls through to parse_response, replays as "general", and its
 # report is dropped from the transcript, so the live turn looks perfect and only a reload shows the
 # damage.
-_AGENT_MODE_RE = re.compile(r'<response\b[^>]*\bmode="(disk|process|network|general)"')
+_AGENT_MODE_RE = re.compile(r'<response\b[^>]*\bmode="(disk|process|network|general|multi)"')
 
 
 def _element_text(element):
@@ -72,6 +72,68 @@ def parse_response(raw_text: str) -> tuple[str | None, str]:
     return _element_text(root.find("thinking")), content
 
 
+def _load_json(element, default):
+    """JSON carried inside an element, or `default`. A row whose JSON no longer parses replays
+    without that piece rather than taking the whole transcript down with it."""
+    if element is None or not element.text:
+        return default
+    try:
+        return json.loads(element.text)
+    except ValueError:
+        logger.warning(f"stored chat XML had unreadable JSON in <{element.tag}>")
+        return default
+
+
+def _write_agent(root, slot):
+    """One agent's slice of a multi-agent turn, written as an <agent mode="..."> child.
+
+    Each slot is that agent's own final event, so this writes the same three shapes the single-agent
+    branches below do - a report, the base agent's prose, or the fact that it failed."""
+    mode = slot.get("mode") or "general"
+    element = ET.SubElement(root, "agent")
+    element.set("mode", mode)
+
+    error = slot.get("error")
+    if error:
+        # A failed agent is stored, not dropped. The turn's answer covered the parts that worked, and
+        # a replay that quietly showed two findings where the live turn showed two findings and a
+        # failure would be a different, more confident answer than the user was actually given.
+        ET.SubElement(element, "error").text = str(error)
+        return
+
+    thinking = slot.get("thinking")
+    if thinking:
+        ET.SubElement(element, "thinking").text = thinking
+
+    if mode == "general":
+        ET.SubElement(element, "content").text = slot.get("content") or ""
+    else:
+        ET.SubElement(element, "report").text = json.dumps(slot.get(f"{mode}_report") or {})
+
+    ET.SubElement(element, "commands_run").text = json.dumps(slot.get("commands_run") or [])
+
+
+def _read_agent(element) -> dict:
+    """The inverse of _write_agent: one <agent> element back into the slot shape the live
+    `agent_final` event and the composite final's `agents` list both carry."""
+    mode = element.get("mode") or "general"
+
+    error = _element_text(element.find("error"))
+    if error:
+        return {"mode": mode, "error": error}
+
+    slot = {
+        "mode": mode,
+        "thinking": _element_text(element.find("thinking")),
+        "commands_run": _load_json(element.find("commands_run"), []),
+    }
+    if mode == "general":
+        slot["content"] = _element_text(element.find("content")) or ""
+    else:
+        slot[f"{mode}_report"] = _load_json(element.find("report"), {})
+    return slot
+
+
 def to_storage_xml(final_event: dict) -> str:
     """Serializes a terminal `final` event into the XML stored in the chats table, so a session can
     be replayed later without losing thinking, the structured report, or which commands ran.
@@ -83,8 +145,23 @@ def to_storage_xml(final_event: dict) -> str:
     already renders, with the structured report and command list carried as JSON text inside their
     own elements. A general turn where the base agent did run commands takes the synthesized path
     too: storing its raw reply would keep the answer and silently lose the record of what was run.
+
+    A "multi" turn - two or three agents on one message - is a container of those same shapes: the
+    composed summary, then one <agent> per agent carrying whatever that agent produced. Storing the
+    agents individually rather than flattening them into one report is what lets a replay draw the
+    same cards, in the same order, that the live turn drew.
     """
     mode = final_event.get("mode", "general")
+    if mode == "multi":
+        root = ET.Element("response")
+        root.set("mode", "multi")
+        summary = final_event.get("summary")
+        if summary:
+            ET.SubElement(root, "summary").text = summary
+        for slot in final_event.get("agents") or []:
+            _write_agent(root, slot)
+        return ET.tostring(root, encoding="unicode")
+
     if mode == "general":
         commands_run = final_event.get("commands_run") or []
         if not commands_run:
@@ -127,6 +204,9 @@ def from_storage_xml(chat_text: str) -> dict:
     try:
         root = ET.fromstring(block)
     except ET.ParseError as e:
+        if mode == "multi":
+            logger.warning(f"stored multi chat XML was malformed ({e}); replaying with no agents")
+            return {"mode": "multi", "thinking": None, "summary": None, "agents": [], "commands_run": []}
         if mode == "general":
             # Falling back to the tolerant reader rather than an empty report: a general turn's value
             # is its prose, and parse_response salvages that out of markup this parser rejected.
@@ -137,6 +217,20 @@ def from_storage_xml(chat_text: str) -> dict:
         return {"mode": mode, "thinking": None, f"{mode}_report": {}, "commands_run": []}
 
     thinking = _element_text(root.find("thinking"))
+
+    if mode == "multi":
+        agents = [_read_agent(element) for element in root.findall("agent")]
+        return {
+            "mode": "multi",
+            "thinking": thinking,
+            "summary": _element_text(root.find("summary")),
+            "agents": agents,
+            # Flattened the same way the live event flattens it, so a replayed turn and a live one
+            # answer "what did this turn run" identically.
+            "commands_run": [
+                command for slot in agents for command in (slot.get("commands_run") or [])
+            ],
+        }
 
     if mode == "general":
         commands_el = root.find("commands_run")

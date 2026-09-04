@@ -18,6 +18,7 @@ from routers.orchestrator.tools.command.router import router as command_tools_ro
 from routers.orchestrator.tools.disk.router import router as disk_tools_router
 from routers.orchestrator.tools.network.router import router as network_tools_router
 from routers.orchestrator.tools.process.router import router as process_tools_router
+from routers.orchestrator.supervisor.router import router as supervisor_router
 from routers.orchestrator.tools.router import router as tools_catalog_router
 from routers.orchestrator.tools.system.router import router as system_tools_router
 from routers.user.preferences.router import router as user_preferences_router
@@ -45,6 +46,11 @@ app.include_router(models.router)
 app.include_router(local_models_router)
 app.include_router(sessions.router)
 app.include_router(orchestrator.router)
+
+# The orchestrator's own supervisor (routers/orchestrator/supervisor/) — GET
+# /linux/orchestrator/supervisor/ describes it; /plan decides which agents answer a message and
+# /compose writes the paragraph over their reports. The orchestrator calls both over loopback.
+app.include_router(supervisor_router)
 
 # Category: agents (routers/orchestrator/agents/) — GET /linux/agents/ catalogs every agent; each
 # agent's own router (e.g. /linux/agents/disk/ws) is mounted alongside it.
