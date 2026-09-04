@@ -103,6 +103,8 @@ body {
 .sidebar-content {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    overflow-y: auto;
 }
 
 .sidebar.collapsed .sidebar-content {
@@ -139,7 +141,7 @@ body {
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-muted);
-    margin-top: 1.25rem;
+    margin-top: 2.5rem;
     margin-bottom: 0.5rem;
     padding-left: 0.25rem;
     text-transform: uppercase;
@@ -151,7 +153,6 @@ body {
     flex-direction: column;
     gap: 0.15rem;
     margin-top: 0.75rem;
-    overflow-y: auto;
 }
 
 .session-item {

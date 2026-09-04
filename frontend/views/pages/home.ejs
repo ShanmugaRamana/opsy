@@ -11,8 +11,14 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                 <span>New Chat</span>
             </button>
-            <h3 class="recent-chats-heading">Recent Chats</h3>
-            <div class="session-list" id="session-list"></div>
+            <div id="active-chat-section" style="display: none;">
+                <h3 class="recent-chats-heading" id="active-chats-heading" style="margin-top: 1.5rem;">Active Chat</h3>
+                <div class="session-list" id="active-session-list"></div>
+            </div>
+            <div id="recent-chat-section" style="display: none;">
+                <h3 class="recent-chats-heading" id="recent-chats-heading">Recent Chats</h3>
+                <div class="session-list" id="recent-session-list"></div>
+            </div>
         </div>
         <div class="sidebar-footer">
             <div class="user-profile">

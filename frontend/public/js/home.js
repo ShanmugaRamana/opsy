@@ -221,7 +221,10 @@ let turnInProgress = false;
 let sessionsById = {};
 
 const newChatBtn = document.getElementById('new-chat-btn');
-const sessionListEl = document.getElementById('session-list');
+const activeChatSection = document.getElementById('active-chat-section');
+const activeSessionListEl = document.getElementById('active-session-list');
+const recentChatSection = document.getElementById('recent-chat-section');
+const recentSessionListEl = document.getElementById('recent-session-list');
 const runningBanner = document.getElementById('running-banner');
 const runningBannerText = document.getElementById('running-banner-text');
 const runningBannerBtn = document.getElementById('running-banner-btn');
@@ -253,15 +256,32 @@ function renderSessionList() {
         (a, b) => new Date(b.updated_at) - new Date(a.updated_at)
     );
     newChatBtn.disabled = turnInProgress;
-    sessionListEl.innerHTML = '';
+    
+    activeSessionListEl.innerHTML = '';
+    recentSessionListEl.innerHTML = '';
+    
+    let hasActive = false;
+    let hasRecent = false;
+
     sessions.forEach((session) => {
         const item = document.createElement('button');
-        item.className = 'session-item' + (session.session_id === currentSessionId ? ' active' : '');
+        const isActive = session.session_id === currentSessionId;
+        item.className = 'session-item' + (isActive ? ' active' : '');
         item.innerText = session.session_name;
         item.disabled = turnInProgress;
         item.addEventListener('click', () => switchToSession(session.session_id));
-        sessionListEl.appendChild(item);
+        
+        if (isActive) {
+            activeSessionListEl.appendChild(item);
+            hasActive = true;
+        } else {
+            recentSessionListEl.appendChild(item);
+            hasRecent = true;
+        }
     });
+
+    activeChatSection.style.display = hasActive ? 'block' : 'none';
+    recentChatSection.style.display = hasRecent ? 'block' : 'none';
 }
 
 async function loadSessions() {
@@ -1254,6 +1274,11 @@ function sendMessage() {
             message,
             session_id: currentSessionId,
         }));
+        
+        if (currentSessionId && sessionsById[currentSessionId]) {
+            sessionsById[currentSessionId].updated_at = new Date().toISOString();
+            renderSessionList();
+        }
     });
 }
 
