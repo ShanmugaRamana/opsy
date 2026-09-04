@@ -171,6 +171,24 @@ async def call_command_tool(request_id, argv, count_lines=False):
         return f"Error running the approved command: {e}"
 
 
+async def always_approve_commands():
+    """Whether the user has standing approval switched on, read over the preferences route.
+
+    Every failure answers False: a preference we could not read must mean we ask, never that we run
+    something unasked. A database that is down, an install nobody has onboarded yet, or an
+    unexpected response shape all land on the flow that was there before the preference existed.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(f"{INTERNAL_API_BASE}/linux/users/preferences")
+        if response.status_code != 200:
+            return False
+        return bool(response.json().get("always_approve_commands", False))
+    except (httpx.HTTPError, KeyError, ValueError) as e:
+        logger.warning(f"could not read the command-approval preference, asking the user instead: {e}")
+        return False
+
+
 async def run_command_request(agent, argv, reason, count_lines=False):
     """Asks the user to approve one ad-hoc command, then runs it if they say yes.
 
@@ -189,6 +207,8 @@ async def run_command_request(agent, argv, reason, count_lines=False):
         yield command_result(agent, label, f"That command cannot be run: {error}.")
         return
 
+    auto_approved = await always_approve_commands()
+
     request_id = permissions.create(argv, reason)
     yield {
         "type": "permission_request",
@@ -197,16 +217,27 @@ async def run_command_request(agent, argv, reason, count_lines=False):
         "command": label,
         "reason": (reason or "").strip(),
         "count_lines": count_lines,
+        "auto_approved": auto_approved,
     }
 
     try:
-        approved = await permissions.wait(request_id)
+        if auto_approved:
+            # Settled here rather than skipped: the command tool route checks the argv against what
+            # this entry was approved for, so a standing approval goes through the same server-side
+            # binding a clicked one does. The preference changes who grants approval, not whether
+            # the argv that runs is the argv that was approved.
+            permissions.resolve(request_id, True)
+            approved = True
+        else:
+            approved = await permissions.wait(request_id)
+
         yield {
             "type": "permission_resolved",
             "agent": agent,
             "request_id": request_id,
             "command": label,
             "approved": approved,
+            "auto_approved": auto_approved,
         }
 
         if not approved:

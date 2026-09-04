@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS "user" (
     profile_pic TEXT NOT NULL,
     linux_experience TEXT NOT NULL,
     role_use_case TEXT NOT NULL,
+    always_approve_commands BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 )
 """

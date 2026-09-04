@@ -559,7 +559,7 @@ function renderPermissionRequest(data) {
 
     const title = document.createElement('div');
     title.style.cssText = 'font-weight: 600; margin-bottom: 0.3rem;';
-    title.innerText = 'Zyros wants to run a command';
+    title.innerText = data.auto_approved ? 'Zyros ran a command' : 'Zyros wants to run a command';
     card.appendChild(title);
 
     if (data.reason) {
@@ -579,6 +579,18 @@ function renderPermissionRequest(data) {
         note.style.cssText = 'font-size: 0.7rem; opacity: 0.65; margin-bottom: 0.4rem;';
         note.innerText = 'Only a count of the result will be reported, not the full output.';
         card.appendChild(note);
+    }
+
+    // Standing approval is on, so nothing was asked. The card still goes in the trace: a command
+    // that ran with no record would make the transcript lie about what happened.
+    if (data.auto_approved) {
+        const note = document.createElement('div');
+        note.style.cssText = 'opacity: 0.7;';
+        note.innerText = 'Ran with your standing approval.';
+        card.appendChild(note);
+        active.commands.appendChild(card);
+        chatLog.scrollTop = chatLog.scrollHeight;
+        return;
     }
 
     const buttons = document.createElement('div');

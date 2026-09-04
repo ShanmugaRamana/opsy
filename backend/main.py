@@ -20,6 +20,7 @@ from routers.orchestrator.tools.network.router import router as network_tools_ro
 from routers.orchestrator.tools.process.router import router as process_tools_router
 from routers.orchestrator.tools.router import router as tools_catalog_router
 from routers.orchestrator.tools.system.router import router as system_tools_router
+from routers.user.preferences.router import router as user_preferences_router
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(name)s - %(message)s")
 
@@ -37,6 +38,7 @@ app.include_router(health.router)
 app.include_router(system.router)
 app.include_router(onboarding.router)
 app.include_router(user.router)
+app.include_router(user_preferences_router)
 app.include_router(hardware.router)
 app.include_router(byok.router)
 app.include_router(models.router)

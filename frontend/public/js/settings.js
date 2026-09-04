@@ -19,6 +19,113 @@ navItems.forEach(item => {
     });
 });
 
+// ---- Profile: read-only display of the onboarded user ----
+
+const ROLE_LABELS = {
+    'developer': 'Developer',
+    'sysadmin': 'Sysadmin',
+    'homelab': 'Homelab / Self-hoster',
+    'student': 'Student',
+    'desktop-user': 'Just a regular desktop user',
+};
+
+const EXPERIENCE_LABELS = {
+    'beginner': 'Beginner',
+    'intermediate': 'Intermediate',
+    'power-user': 'Power User',
+    'sysadmin-pro': 'Sysadmin-Pro',
+};
+
+function formatDate(iso) {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+async function loadProfile() {
+    const errorEl = document.getElementById('profile-error');
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/linux/users`);
+        if (!res.ok) throw new Error(`users fetch failed: ${res.status}`);
+
+        const users = await res.json();
+        const user = users[0];
+        if (!user) {
+            errorEl.innerText = 'No profile found — this machine has not been set up yet.';
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        document.getElementById('profile-avatar').src = `/${user.profile_pic}`;
+        document.getElementById('profile-name').innerText = user.name;
+        document.getElementById('profile-role').innerText = ROLE_LABELS[user.role_use_case] || user.role_use_case;
+        document.getElementById('profile-experience').innerText =
+            EXPERIENCE_LABELS[user.linux_experience] || user.linux_experience;
+        document.getElementById('profile-created').innerText = formatDate(user.created_at);
+        document.getElementById('profile-card').style.display = 'flex';
+    } catch (e) {
+        console.error('Could not load profile:', e);
+        errorEl.innerText = 'Could not reach the backend to load your profile.';
+        errorEl.style.display = 'block';
+    }
+}
+
+loadProfile();
+
+// ---- Preferences ----
+
+// The toggle starts disabled and only becomes usable once the stored value has been read, so it can
+// never show a default that isn't what the backend actually has.
+const alwaysApproveToggle = document.getElementById('pref-always-approve');
+
+async function loadPreferences() {
+    const errorEl = document.getElementById('pref-error');
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/linux/users/preferences`);
+        if (!res.ok) throw new Error(`preferences fetch failed: ${res.status}`);
+
+        const prefs = await res.json();
+        alwaysApproveToggle.checked = Boolean(prefs.always_approve_commands);
+        alwaysApproveToggle.disabled = false;
+    } catch (e) {
+        console.error('Could not load preferences:', e);
+        errorEl.innerText = 'Could not load your preferences. Reload the page to try again.';
+        errorEl.style.display = 'block';
+    }
+}
+
+alwaysApproveToggle.addEventListener('change', async () => {
+    const errorEl = document.getElementById('pref-error');
+    const desired = alwaysApproveToggle.checked;
+
+    errorEl.style.display = 'none';
+    alwaysApproveToggle.disabled = true;
+
+    try {
+        const res = await fetch(`${BACKEND_URL}/linux/users/preferences`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ always_approve_commands: desired }),
+        });
+        if (!res.ok) throw new Error(`preferences save failed: ${res.status}`);
+
+        const saved = await res.json();
+        alwaysApproveToggle.checked = Boolean(saved.always_approve_commands);
+    } catch (e) {
+        // Never leave the switch showing a setting that didn't persist.
+        console.error('Could not save preference:', e);
+        alwaysApproveToggle.checked = !desired;
+        errorEl.innerText = "Couldn't save that preference. Please try again.";
+        errorEl.style.display = 'block';
+    } finally {
+        alwaysApproveToggle.disabled = false;
+    }
+});
+
+loadPreferences();
+
 // ---- Local models: installed (with delete) + hardware-matched suggestions (with download) ----
 
 const FIT_LABELS = {
