@@ -85,7 +85,7 @@ document.getElementById('back-to-step-1-btn').addEventListener('click', () => {
     document.getElementById('step-1').style.display = 'flex';
 });
 
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'http://localhost:8008';
 const errorText = document.getElementById('onboarding-error');
 
 document.getElementById('next-step-2-btn').addEventListener('click', () => {

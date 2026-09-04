@@ -5,13 +5,29 @@
 *.swp
 *.swo
 
-# Environment Variables
+# Environment Variables & Secrets
 .env
+.env.*
+*.key
+*.pem
+
+# Python artifacts (legacy)
 venv/
 venv
-node_modules
 __pycache__/
+*.pyc
 
-plans
+# Node.js artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
+# Rust / Cargo artifacts
+target/
+**/target/
+Cargo.lock
+
+# Documentation & Internal
+plans/
 internal/

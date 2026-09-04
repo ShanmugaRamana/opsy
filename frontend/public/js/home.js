@@ -5,6 +5,10 @@ collapseBtn.addEventListener('click', () => {
     sidebar.classList.toggle('collapsed');
 });
 
+document.querySelector('.settings-btn').addEventListener('click', () => {
+    window.location.href = '/settings';
+});
+
 // Randomized greeting phrases
 const phrases = [
     "Ready?",
@@ -18,7 +22,7 @@ const phrases = [
 document.getElementById('greeting-text').innerText = phrases[Math.floor(Math.random() * phrases.length)];
 
 // Sidebar user profile, loaded from the onboarded user's record
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = 'http://localhost:8008';
 
 const ROLE_LABELS = {
     'developer': 'Developer',
@@ -189,8 +193,7 @@ async function loadProviderAndModelDropdowns() {
         setModelSelectorEnabled(false);
 
         if (providers.length > 0) {
-            providerTextEl.innerText = 'Select Provider';
-            modelTextEl.innerText = 'Select Model';
+            selectProvider(providers[0]);
         } else {
             providerTextEl.innerText = 'No provider';
             modelTextEl.innerText = 'No models';
@@ -221,7 +224,10 @@ let turnInProgress = false;
 let sessionsById = {};
 
 const newChatBtn = document.getElementById('new-chat-btn');
-const sessionListEl = document.getElementById('session-list');
+const activeChatSection = document.getElementById('active-chat-section');
+const activeSessionListEl = document.getElementById('active-session-list');
+const recentChatSection = document.getElementById('recent-chat-section');
+const recentSessionListEl = document.getElementById('recent-session-list');
 const runningBanner = document.getElementById('running-banner');
 const runningBannerText = document.getElementById('running-banner-text');
 const runningBannerBtn = document.getElementById('running-banner-btn');
@@ -253,15 +259,32 @@ function renderSessionList() {
         (a, b) => new Date(b.updated_at) - new Date(a.updated_at)
     );
     newChatBtn.disabled = turnInProgress;
-    sessionListEl.innerHTML = '';
+    
+    activeSessionListEl.innerHTML = '';
+    recentSessionListEl.innerHTML = '';
+    
+    let hasActive = false;
+    let hasRecent = false;
+
     sessions.forEach((session) => {
         const item = document.createElement('button');
-        item.className = 'session-item' + (session.session_id === currentSessionId ? ' active' : '');
+        const isActive = session.session_id === currentSessionId;
+        item.className = 'session-item' + (isActive ? ' active' : '');
         item.innerText = session.session_name;
         item.disabled = turnInProgress;
         item.addEventListener('click', () => switchToSession(session.session_id));
-        sessionListEl.appendChild(item);
+        
+        if (isActive) {
+            activeSessionListEl.appendChild(item);
+            hasActive = true;
+        } else {
+            recentSessionListEl.appendChild(item);
+            hasRecent = true;
+        }
     });
+
+    activeChatSection.style.display = hasActive ? 'block' : 'none';
+    recentChatSection.style.display = hasRecent ? 'block' : 'none';
 }
 
 async function loadSessions() {
@@ -284,6 +307,10 @@ function renderStoredTurn(turn) {
         appendMessage('user', turn.content || '');
         return;
     }
+    if (turn.mode === 'multi') {
+        renderMultiTurn(turn);
+        return;
+    }
     const renderer = REPORT_RENDERERS[turn.mode];
     if (renderer) {
         renderer(turn[`${turn.mode}_report`]);
@@ -297,6 +324,8 @@ function resetChatView() {
     chatLog.style.display = 'none';
     document.querySelector('.main-content').classList.remove('is-chatting');
     trace = null;
+    // Any failure card that was awaiting a retry went out with the transcript.
+    retryingCard = null;
 }
 
 async function switchToSession(sessionId, options = {}) {
@@ -402,10 +431,23 @@ let orchestratorSocket = null;
 
 const SEVERITY_COLORS = { plenty: '#2ecc71', moderate: '#f1c40f', tight: '#e67e22', critical: '#e74c3c' };
 const LOAD_SEVERITY_COLORS = { idle: '#2ecc71', normal: '#2ecc71', busy: '#e67e22', overloaded: '#e74c3c' };
+const NETWORK_SEVERITY_COLORS = { online: '#2ecc71', degraded: '#e67e22', offline: '#e74c3c' };
+// The ladder marks a position in a chain rather than a quantity, so its rungs get their own three
+// states instead of the severity scale the disk and process bars use.
+const RUNG_COLORS = { ok: '#2ecc71', fail: '#e74c3c', unknown: '#888' };
 
 // The live trace for the turn in flight: a panel that exists from the first event, updates its own
 // header as work happens, and collapses once the answer lands.
 let trace = null;
+
+// The message of the most recently sent turn, kept so its failure card can re-send exactly that text
+// instead of asking the user to retype it, and the card currently waiting on a retry it triggered.
+// `turnPending` spans send until the turn resolves one way or the other - wider than
+// `turnInProgress`, which only starts at the backend's "started" event and so would miss a socket
+// that dies before the turn ever begins.
+let inFlightMessage = null;
+let retryingCard = null;
+let turnPending = false;
 
 function startTrace() {
     chatLog.style.display = 'flex';
@@ -485,8 +527,12 @@ function appendThinkingDelta(text) {
     scrollChatToBottom();
 }
 
+// Identifies the row a tool_result belongs to. Every field that can distinguish two calls is in the
+// key: the agent, because a turn can now run several and they would otherwise share rows; and the
+// label, because every approved ad-hoc command arrives as the same `request_command` with a null
+// path, so two of them in one turn used to collide and finish each other's row.
 function traceRowKey(data) {
-    return `${data.command}::${data.path || ''}`;
+    return `${data.agent || ''}::${data.command}::${data.label || ''}::${data.path || ''}`;
 }
 
 // ---- Command approval ----
@@ -520,7 +566,7 @@ function renderPermissionRequest(data) {
 
     const title = document.createElement('div');
     title.style.cssText = 'font-weight: 600; margin-bottom: 0.3rem;';
-    title.innerText = 'Opsy wants to run a command';
+    title.innerText = data.auto_approved ? 'Zyros ran a command' : 'Zyros wants to run a command';
     card.appendChild(title);
 
     if (data.reason) {
@@ -540,6 +586,18 @@ function renderPermissionRequest(data) {
         note.style.cssText = 'font-size: 0.7rem; opacity: 0.65; margin-bottom: 0.4rem;';
         note.innerText = 'Only a count of the result will be reported, not the full output.';
         card.appendChild(note);
+    }
+
+    // Standing approval is on, so nothing was asked. The card still goes in the trace: a command
+    // that ran with no record would make the transcript lie about what happened.
+    if (data.auto_approved) {
+        const note = document.createElement('div');
+        note.style.cssText = 'opacity: 0.7;';
+        note.innerText = 'Ran with your standing approval.';
+        card.appendChild(note);
+        active.commands.appendChild(card);
+        chatLog.scrollTop = chatLog.scrollHeight;
+        return;
     }
 
     const buttons = document.createElement('div');
@@ -623,7 +681,8 @@ function finishTraceRow(data) {
     if (!entry) return;
 
     const output = document.createElement('div');
-    output.style.cssText = 'white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin: 0.2rem 0 0.4rem 1.2rem; padding-left: 0.4rem; border-left: 1px solid var(--border);';
+    output.style.cssText = 'white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin: 0.2rem 0 0.4rem 1.2rem; padding-left: 0.4rem; border-left: 1px solid var(--border); max-height: 15rem; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(0, 0, 0, 0.2) transparent;';
+    output.classList.add('tool-result-scroll');
     output.innerText = data.output;
 
     entry.summary.innerText = entry.target;
@@ -660,6 +719,13 @@ function closeTrace(keepOpen) {
 function friendlyError(detail) {
     const text = String(detail || 'Something went wrong.');
 
+    // Local-provider failures (Ollama unreachable) are already a plain, actionable sentence from the
+    // backend - unlike a cloud 401, there is no key to "check in setup", so this returns as-is rather
+    // than falling into that copy below.
+    if (/ollama isn'?t (running|installed)/i.test(text)) {
+        return text;
+    }
+
     if (/rate.?limit|\b429\b|too many requests/i.test(text)) {
         const wait = text.match(/try again in ([0-9.]+)\s*s/i);
         const model = text.match(/model `([^`]+)`/);
@@ -677,6 +743,124 @@ function friendlyError(detail) {
     if (message) return message[1];
 
     return text.length > 300 ? `${text.slice(0, 300)}...` : text;
+}
+
+// What to tell the user about a turn that died, and whether sending the same message again could
+// plausibly get a different answer. By the time an error reaches the client the backend has already
+// spent its retry budget, so `retryable` means "a person can do something and try again", not "this
+// will probably work on its own".
+function describeFailure(detail, status) {
+    const text = String(detail || '');
+
+    if (/ollama isn'?t (running|installed)/i.test(text)) {
+        return { title: friendlyError(text), hint: 'Start Ollama, then send this again.', retryable: true };
+    }
+    if (/connection to the backend|agent unreachable/i.test(text)) {
+        return {
+            title: 'Lost the connection to the backend.',
+            hint: 'Check that the Zyros backend is still running, then send this again.',
+            retryable: true,
+        };
+    }
+    if (status === 429 || /rate.?limit|\b429\b|too many requests/i.test(text)) {
+        return {
+            title: friendlyError(text),
+            hint: 'Zyros already retried this a few times. Wait a moment, or pick a different model, then send it again.',
+            retryable: true,
+        };
+    }
+    if (status === 401 || status === 403 || /\b401\b|invalid.*api.?key|authentication/i.test(text)) {
+        return {
+            title: 'That provider rejected the API key.',
+            hint: 'Fix the key on the setup page, then send this again.',
+            retryable: true,
+        };
+    }
+    if (/no stored api key/i.test(text)) {
+        return {
+            title: 'No API key is stored for this provider.',
+            hint: 'Add one on the setup page, then send this again.',
+            retryable: true,
+        };
+    }
+    if (status === 400) {
+        // A rejected request (unknown provider, malformed payload) answers the same way every time,
+        // so a retry button here would only be a second way to fail.
+        return { title: friendlyError(text), hint: 'Pick a different provider or model below and send again.', retryable: false };
+    }
+    return {
+        title: "That didn't go through.",
+        hint: 'The provider stopped responding after a few tries. Your message is still here — send it again when you are ready.',
+        retryable: true,
+    };
+}
+
+// The card that replaces a raw provider error in the transcript: a sentence a person can act on, the
+// technical detail folded away for when it is actually wanted, and a button that re-sends the exact
+// message that failed so the turn is recoverable without retyping it.
+function renderTurnFailure(data) {
+    const { title, hint, retryable } = describeFailure(data.detail, data.status);
+    const message = inFlightMessage;
+
+    // A retry that failed again is one failure, not two: its card goes so the new one takes its
+    // place, instead of leaving a dead "Sending again..." button stranded above it.
+    if (retryingCard) {
+        retryingCard.card.remove();
+        retryingCard = null;
+    }
+
+    chatLog.style.display = 'flex';
+    document.querySelector('.main-content').classList.add('is-chatting');
+
+    const card = document.createElement('div');
+    card.style.cssText = 'display: flex; justify-content: space-between; align-items: center; font-family: \'Inter\', sans-serif; font-size: 0.8rem; line-height: 1.45; padding: 0.7rem 0.9rem; margin: 0.25rem 0; border: 1px solid #dc2626; border-radius: 8px; background: transparent; gap: 1rem;';
+
+    const content = document.createElement('div');
+    content.style.cssText = 'display: flex; flex-direction: column; gap: 0.15rem; flex: 1;';
+
+    const heading = document.createElement('div');
+    heading.style.cssText = 'font-weight: 600; color: #dc2626;';
+    heading.innerText = title;
+    content.appendChild(heading);
+
+    const body = document.createElement('div');
+    body.style.cssText = 'opacity: 0.8;';
+    body.innerText = hint;
+    content.appendChild(body);
+    
+    card.appendChild(content);
+
+    if (retryable && message) {
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display: flex; align-items: center; flex-shrink: 0;';
+
+        const retry = document.createElement('button');
+        retry.innerText = 'Retry';
+        retry.style.cssText = 'padding: 0.4rem 0.9rem; border-radius: 6px; border: none; background: var(--text-main); color: var(--bg-color); cursor: pointer; font-family: inherit; font-size: 0.75rem; font-weight: 500; white-space: nowrap; transition: opacity 0.2s;';
+        
+        const reset = () => {
+            retry.disabled = false;
+            retry.style.opacity = '1';
+            retry.style.cursor = 'pointer';
+            retry.innerText = 'Retry';
+        };
+
+        retry.addEventListener('click', () => {
+            retry.disabled = true;
+            retry.style.opacity = '0.5';
+            retry.style.cursor = 'default';
+            retry.innerText = 'Sending again...';
+            retryingCard = { card, reset };
+            sendTurn(message, { isRetry: true });
+        });
+        
+        actions.appendChild(retry);
+        card.appendChild(actions);
+    }
+
+    chatLog.appendChild(card);
+    scrollChatToBottom();
+    return card;
 }
 
 
@@ -906,9 +1090,326 @@ function renderProcessReport(report) {
     }
 }
 
+// The five rungs, in the order they are walked. A failure at one implies nothing about the ones
+// above it, which is exactly why the chain is rendered instead of a single online/offline verdict.
+const LADDER_RUNGS = [
+    ['link', 'Link'],
+    ['address', 'Address'],
+    ['gateway', 'Gateway'],
+    ['dns', 'DNS'],
+    ['internet', 'Internet'],
+];
+
+function renderConnectivityLadder(connectivity) {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin: 0.5rem 0.9rem;';
+
+    LADDER_RUNGS.forEach(([key, label], index) => {
+        const status = connectivity[key] || 'unknown';
+        const failed = connectivity.failed_at === key;
+
+        const rung = document.createElement('div');
+        const color = RUNG_COLORS[status] || RUNG_COLORS.unknown;
+        // The failing rung is the answer, so it carries the only filled background in the row.
+        rung.style.cssText = [
+            'display: flex; align-items: center; gap: 0.3rem;',
+            'font-family: \'Inter\', sans-serif; font-size: 0.72rem;',
+            'padding: 0.2rem 0.5rem; border-radius: 5px;',
+            `border: 1px solid ${failed ? color : 'var(--border)'};`,
+            failed ? `background: ${color}22; font-weight: 600;` : '',
+            status === 'unknown' ? 'opacity: 0.5;' : '',
+        ].join(' ');
+
+        const dot = document.createElement('span');
+        dot.style.cssText = `width: 6px; height: 6px; border-radius: 50%; background: ${color}; flex: none;`;
+        rung.appendChild(dot);
+
+        const text = document.createElement('span');
+        text.innerText = label;
+        rung.appendChild(text);
+        wrap.appendChild(rung);
+
+        if (index < LADDER_RUNGS.length - 1) {
+            const arrow = document.createElement('span');
+            arrow.style.cssText = 'opacity: 0.3; font-size: 0.7rem;';
+            arrow.innerText = '→';
+            wrap.appendChild(arrow);
+        }
+    });
+
+    chatLog.appendChild(wrap);
+
+    const parts = [];
+    if (connectivity.severity) parts.push(connectivity.severity);
+    if (connectivity.failed_at) {
+        parts.push(`first failure at ${connectivity.failed_at}`);
+    } else if (connectivity.severity === 'online') {
+        parts.push('every layer checked out');
+    }
+    if (parts.length > 0) {
+        const line = appendBlock(parts.join(' · '), 'font-size: 0.75rem; padding: 0 0.9rem; opacity: 0.8;');
+        if (line && connectivity.severity) {
+            line.style.color = NETWORK_SEVERITY_COLORS[connectivity.severity] || '';
+        }
+    }
+}
+
+function renderInterfacesTable(interfaces) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse; width: calc(100% - 1.8rem);';
+    interfaces.forEach((iface) => {
+        const tr = document.createElement('tr');
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; font-weight: 500; white-space: nowrap; vertical-align: top;';
+        name.innerText = iface.name;
+        tr.appendChild(name);
+
+        const stats = document.createElement('td');
+        stats.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; opacity: 0.75; white-space: nowrap; vertical-align: top;';
+        const bits = [];
+        if (iface.kind) bits.push(iface.kind);
+        if (iface.state) bits.push(iface.state);
+        if (iface.ipv4) bits.push(iface.ipv4);
+        if (iface.ipv6) bits.push(iface.ipv6);
+        if (iface.signal_dbm != null) bits.push(`${iface.signal_dbm} dBm`);
+        stats.innerText = bits.join(' · ');
+        tr.appendChild(stats);
+
+        const detail = document.createElement('td');
+        detail.style.cssText = 'padding: 0.25rem 0; opacity: 0.65; word-break: break-word;';
+        detail.innerText = iface.detail || '';
+        tr.appendChild(detail);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+function renderConnectionsTable(connections) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse; width: calc(100% - 1.8rem);';
+    connections.forEach((entry) => {
+        const tr = document.createElement('tr');
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; font-weight: 500; white-space: nowrap; vertical-align: top;';
+        name.innerText = entry.name;
+        tr.appendChild(name);
+
+        const stats = document.createElement('td');
+        stats.style.cssText = 'padding: 0.25rem 0.9rem 0.25rem 0; opacity: 0.75; white-space: nowrap; vertical-align: top;';
+        const bits = [];
+        if (entry.connections != null) bits.push(`${entry.connections} conn${entry.connections === 1 ? '' : 's'}`);
+        if (entry.listening) bits.push(`${entry.listening} listening`);
+        stats.innerText = bits.join(' · ');
+        tr.appendChild(stats);
+
+        const detail = document.createElement('td');
+        detail.style.cssText = 'padding: 0.25rem 0; opacity: 0.65; word-break: break-word;';
+        detail.innerText = entry.detail || '';
+        tr.appendChild(detail);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+const EXPOSURE_LABELS = {
+    'all-interfaces': 'reachable from your network',
+    local: 'this machine only',
+    unknown: 'exposure unknown',
+};
+
+function renderListeningTable(ports) {
+    const table = document.createElement('table');
+    table.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.78rem; margin: 0.4rem 0.9rem; border-collapse: collapse; width: calc(100% - 1.8rem);';
+    ports.forEach((entry) => {
+        const tr = document.createElement('tr');
+
+        const port = document.createElement('td');
+        port.style.cssText = 'padding: 0.15rem 0.6rem 0.15rem 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.72rem; vertical-align: top;';
+        port.innerText = [entry.protocol, entry.port].filter((v) => v != null && v !== '').join('/');
+        tr.appendChild(port);
+
+        const name = document.createElement('td');
+        name.style.cssText = 'padding: 0.15rem 0.9rem 0.15rem 0; font-weight: 500; vertical-align: top;';
+        name.innerText = entry.process || '';
+        tr.appendChild(name);
+
+        // Whether a port is reachable from outside is the security-relevant half of the row, so it
+        // is spelled out rather than left as a bind address the reader has to interpret.
+        const exposure = document.createElement('td');
+        exposure.style.cssText = 'padding: 0.15rem 0; opacity: 0.75; word-break: break-word;';
+        const label = EXPOSURE_LABELS[entry.exposure] || '';
+        exposure.innerText = [entry.address, label].filter(Boolean).join(' · ');
+        if (entry.exposure === 'all-interfaces') {
+            exposure.style.color = NETWORK_SEVERITY_COLORS.degraded;
+            exposure.style.opacity = '1';
+        }
+        tr.appendChild(exposure);
+
+        table.appendChild(tr);
+    });
+    chatLog.appendChild(table);
+}
+
+function renderNetworkReport(report) {
+    if (!report) return;
+
+    if (report.summary) appendMessage('assistant', report.summary);
+    if (report.salvaged) appendSalvagedNotice();
+    if (report.explanation) {
+        appendBlock(report.explanation, 'font-size: 0.82rem; line-height: 1.5; padding: 0 0.9rem; opacity: 0.9;');
+    }
+
+    // The ladder goes first: where it broke is the answer, and everything below is supporting detail.
+    if (report.connectivity) renderConnectivityLadder(report.connectivity);
+
+    if (report.interfaces && report.interfaces.length > 0) {
+        appendBlock('Interfaces', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+        renderInterfacesTable(report.interfaces);
+    }
+
+    if (report.connections && report.connections.length > 0) {
+        appendBlock('Connections by application', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+        renderConnectionsTable(report.connections);
+
+        // Stated directly beneath the list it qualifies, so the caveat is read with the data rather
+        // than after it.
+        if (report.confidence === 'degraded') {
+            appendBlock(
+                'Some sockets could not be matched to a program, which needs root, so the owners of those connections are unknown. The counts, ports and remote addresses above are accurate.',
+                'font-size: 0.75rem; padding: 0.3rem 0.9rem 0; opacity: 0.7; font-style: italic;',
+            );
+        }
+    }
+
+    if (report.listening && report.listening.length > 0) {
+        appendBlock('Listening ports', 'font-size: 0.72rem; padding: 0.3rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;');
+        renderListeningTable(report.listening);
+    }
+
+    appendFactsTable(report.facts);
+
+    if (report.standout) {
+        appendBlock(report.standout, 'font-size: 0.8rem; padding: 0.4rem 0.9rem; line-height: 1.5; border-left: 2px solid var(--border); margin: 0.3rem 0.9rem; font-weight: 500;');
+    }
+
+    if (report.suggestion) {
+        appendBlock(report.suggestion, 'font-size: 0.8rem; padding: 0.4rem 0.9rem; line-height: 1.5; border-left: 2px solid var(--border); margin: 0.3rem 0.9rem;');
+    }
+}
+
 // One entry per agent that renders a structured report, keyed by the orchestrator's `mode`. Adding a
-// fourth agent means adding a render function and a line here, not another branch in the switch below.
-const REPORT_RENDERERS = { disk: renderDiskReport, process: renderProcessReport };
+// fifth agent means adding a render function and a line here, not another branch in the switch below.
+// "multi" is deliberately absent: it is a container of these, not a report of its own.
+const REPORT_RENDERERS = { disk: renderDiskReport, process: renderProcessReport, network: renderNetworkReport };
+
+// How each agent is named to the user, in the three places a name is needed: the trace header while
+// it works, the phrase joined into a multi-agent header, and the heading above its report card.
+const AGENT_TRACE_HEADERS = {
+    disk: 'Checking storage',
+    process: "Checking what's running",
+    network: 'Checking the network',
+    general: 'Thinking it through',
+};
+const AGENT_SUBJECTS = {
+    disk: 'storage',
+    process: "what's running",
+    network: 'the network',
+    general: 'the rest',
+};
+const AGENT_CARD_TITLES = {
+    disk: 'Storage',
+    process: 'Running now',
+    network: 'Network',
+    general: 'Answer',
+};
+
+function joinSubjects(parts) {
+    if (parts.length <= 1) return parts[0] || '';
+    return `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+}
+
+// The header for the whole turn, from however many agents were planned for it.
+function classifiedHeader(modes) {
+    if (!modes || modes.length === 0) return 'Answering';
+    if (modes.length === 1) return AGENT_TRACE_HEADERS[modes[0]] || 'Answering';
+    return `Checking ${joinSubjects(modes.map((mode) => AGENT_SUBJECTS[mode] || mode))}`;
+}
+
+// Multi-agent turns only. Each agent gets its own heading and its own thinking block inside the one
+// trace panel, so several agents' reasoning reads as several sections rather than one run-on block -
+// `trace.thinking` is repointed at the new block, which is all appendThinkingDelta needs to follow.
+function startAgentSection(data) {
+    const active = ensureTrace();
+
+    const heading = document.createElement('div');
+    heading.style.cssText = 'margin: 0.5rem 0 0.15rem; font-weight: 600; opacity: 0.85; letter-spacing: 0.02em;';
+    heading.innerText = `${data.index + 1}/${data.total} · ${AGENT_CARD_TITLES[data.mode] || data.mode}`;
+    active.commands.appendChild(heading);
+
+    const thinking = document.createElement('div');
+    thinking.style.cssText = 'white-space: pre-wrap; font-style: italic; padding: 0.2rem 0; line-height: 1.45;';
+    active.commands.appendChild(thinking);
+    active.thinking = thinking;
+
+    setTraceHeader(AGENT_TRACE_HEADERS[data.mode] || 'Working');
+    scrollChatToBottom();
+}
+
+// One agent failing does not fail the turn, so its failure is reported where it happened rather than
+// replacing the answer - the agents that did work still have something to say.
+function appendAgentTraceFailure(data) {
+    const active = ensureTrace();
+    const line = document.createElement('div');
+    line.style.cssText = 'padding: 0.15rem 0; color: #c0392b; opacity: 0.9;';
+    line.innerText = `${AGENT_CARD_TITLES[data.mode] || data.mode}: ${friendlyError(data.error)}`;
+    active.commands.appendChild(line);
+    scrollChatToBottom();
+}
+
+function appendAgentHeading(mode) {
+    appendBlock(
+        AGENT_CARD_TITLES[mode] || mode,
+        'font-size: 0.72rem; padding: 0.6rem 0.9rem 0; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.03em;',
+    );
+}
+
+// A turn several agents answered: the composed paragraph, then each agent's own card in the order
+// they ran, drawn by the very same renderers a single-agent turn uses.
+function renderMultiTurn(turn) {
+    if (turn.summary) appendMessage('assistant', turn.summary);
+
+    (turn.agents || []).forEach((slot) => {
+        appendAgentHeading(slot.mode);
+
+        if (slot.error) {
+            appendBlock(
+                `This check could not finish: ${friendlyError(slot.error)}`,
+                'font-size: 0.8rem; padding: 0.2rem 0.9rem; line-height: 1.5; color: #c0392b;',
+            );
+            return;
+        }
+
+        const renderer = REPORT_RENDERERS[slot.mode];
+        if (renderer) {
+            renderer(slot[`${slot.mode}_report`]);
+        } else {
+            appendMessage('assistant', slot.content || '');
+        }
+    });
+}
+
+// A salvaged answer anywhere in the turn keeps the trace open, for the same reason one does in a
+// single-agent turn: the commands that ran are more trustworthy than the report recovered from prose.
+function multiTurnSalvaged(turn) {
+    return (turn.agents || []).some((slot) => {
+        const report = slot[`${slot.mode}_report`];
+        return Boolean(report && report.salvaged);
+    });
+}
 
 function handleOrchestratorEvent(rawEvent) {
     let data;
@@ -921,7 +1422,19 @@ function handleOrchestratorEvent(rawEvent) {
     switch (data.type) {
         case 'started':
             setTurnInProgress(true);
+            // The failed turn's card is replaced by the retry's own trace, so the transcript shows
+            // one attempt rather than a stack of dead ends.
+            if (retryingCard) {
+                retryingCard.card.remove();
+                retryingCard = null;
+            }
             startTrace();
+            break;
+        case 'model_loading':
+            // Local-provider only: a model not already resident in Ollama can take a while to load
+            // before the first token arrives. Purely additive to the trace header - a cloud turn
+            // never emits this.
+            setTraceHeader(`Loading ${data.model_id}…`);
             break;
         case 'session_created':
             currentSessionId = data.session_id;
@@ -941,13 +1454,36 @@ function handleOrchestratorEvent(rawEvent) {
             }
             break;
         case 'already_running':
+            turnPending = false;
+            // Nothing was attempted, so the failure card stays exactly as it was, button and all -
+            // the retry is still available once the other chat finishes.
+            if (retryingCard) {
+                retryingCard.reset();
+                retryingCard = null;
+            }
             showRunningBanner(data.session_id, data.session_name);
             break;
-        case 'classified': {
-            const headers = { disk: 'Checking storage', process: "Checking what's running" };
-            setTraceHeader(headers[data.mode] || 'Answering');
+        case 'classified':
+            // `modes` is every agent planned for this turn; `mode` is the first of them, kept for a
+            // client that predates fan-out and read only that.
+            setTraceHeader(classifiedHeader(data.modes || [data.mode]));
             break;
-        }
+        case 'agent_started':
+            startAgentSection(data);
+            break;
+        case 'agent_final':
+            // Nothing is drawn in the transcript here: the composite `final` carries every agent's
+            // result, so all the cards are drawn together, in plan order, once the turn is actually
+            // done. The agent's own thinking block is filled in for exactly the reason the
+            // single-agent guard below exists - a round that never streamed its reasoning would
+            // otherwise leave this agent's section of the panel blank.
+            if (data.thinking && trace && !trace.thinking.innerText) {
+                trace.thinking.innerText = data.thinking;
+            }
+            break;
+        case 'agent_error':
+            appendAgentTraceFailure(data);
+            break;
         case 'thinking_delta':
             appendThinkingDelta(data.text);
             break;
@@ -971,10 +1507,19 @@ function handleOrchestratorEvent(rawEvent) {
             finishTraceRow(data);
             break;
         case 'final': {
+            turnPending = false;
             setTurnInProgress(false);
-            // The general path doesn't stream, so its thinking arrives whole; keep it in the panel.
+            // Every mode streams its thinking now, so the panel is normally already filled by the
+            // deltas. This is the guard for a round that streamed nothing - a model that wrote its
+            // whole reply in one chunk, or a provider that only sent text once - so the reasoning
+            // still lands rather than being lost between the two paths.
             if (data.thinking && trace && !trace.thinking.innerText) {
                 trace.thinking.innerText = data.thinking;
+            }
+            if (data.mode === 'multi') {
+                closeTrace(multiTurnSalvaged(data));
+                renderMultiTurn(data);
+                break;
             }
             const report = data[`${data.mode}_report`];
             const salvaged = Boolean(report && report.salvaged);
@@ -988,11 +1533,27 @@ function handleOrchestratorEvent(rawEvent) {
             break;
         }
         case 'error':
+            turnPending = false;
             setTurnInProgress(false);
             closeTrace(true);
-            appendMessage('error', friendlyError(data.detail));
+            renderTurnFailure(data);
             break;
     }
+}
+
+// A socket that closes with a turn still outstanding is the one failure the backend cannot report,
+// since its own error event would have travelled down this socket. Without this the UI would sit on
+// a spinning trace forever; instead the turn ends the same way any other failure does, with a card
+// that can send it again.
+function handleSocketClose(event) {
+    // A close from a socket that has already been replaced - a retry opens a fresh one the moment the
+    // old connection drops - says nothing about the turn now in flight on its successor.
+    if (event && event.target !== orchestratorSocket) return;
+    if (!turnPending) return;
+    turnPending = false;
+    setTurnInProgress(false);
+    closeTrace(true);
+    renderTurnFailure({ detail: 'The connection to the backend closed before this turn finished.' });
 }
 
 function ensureSocket(onReady) {
@@ -1000,12 +1561,48 @@ function ensureSocket(onReady) {
         onReady();
         return;
     }
-    if (!orchestratorSocket || orchestratorSocket.readyState === WebSocket.CLOSED) {
+    // CLOSING counts as gone: a retry is sent right after the connection dropped, and waiting on
+    // `open` from a socket that is on its way out would hang the turn forever.
+    if (
+        !orchestratorSocket
+        || orchestratorSocket.readyState === WebSocket.CLOSED
+        || orchestratorSocket.readyState === WebSocket.CLOSING
+    ) {
         orchestratorSocket = new WebSocket(WS_URL);
         orchestratorSocket.addEventListener('message', handleOrchestratorEvent);
-        orchestratorSocket.addEventListener('error', () => appendMessage('error', 'Connection error.'));
+        // A socket error is always followed by a close, so a turn killed by the connection is
+        // reported once, from the close handler, as a retryable failure rather than twice.
+        orchestratorSocket.addEventListener('error', () => {
+            if (!turnPending) appendMessage('error', 'Connection error.');
+        });
+        orchestratorSocket.addEventListener('close', handleSocketClose);
     }
     orchestratorSocket.addEventListener('open', onReady, { once: true });
+}
+
+// Both a first attempt and a retry go through here, so the retry sends byte-for-byte the same turn
+// the user already saw fail - only `is_retry` differs, which tells the backend the failed attempt's
+// unanswered user row is being replaced rather than added to. `session_id` is read at send time, not
+// captured: a turn that failed on a brand new chat already created its session, and the retry has to
+// land in that session instead of opening a second one.
+function sendTurn(message, options = {}) {
+    inFlightMessage = message;
+    turnPending = true;
+
+    ensureSocket(() => {
+        orchestratorSocket.send(JSON.stringify({
+            provider: selectedProvider,
+            model_id: selectedModelId,
+            message,
+            session_id: currentSessionId,
+            is_retry: Boolean(options.isRetry),
+        }));
+
+        if (currentSessionId && sessionsById[currentSessionId]) {
+            sessionsById[currentSessionId].updated_at = new Date().toISOString();
+            renderSessionList();
+        }
+    });
 }
 
 function sendMessage() {
@@ -1014,15 +1611,7 @@ function sendMessage() {
 
     chatInput.value = '';
     appendMessage('user', message);
-
-    ensureSocket(() => {
-        orchestratorSocket.send(JSON.stringify({
-            provider: selectedProvider,
-            model_id: selectedModelId,
-            message,
-            session_id: currentSessionId,
-        }));
-    });
+    sendTurn(message);
 }
 
 sendBtn.addEventListener('click', sendMessage);

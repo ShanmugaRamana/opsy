@@ -1,0 +1,405 @@
+<style>
+    .settings-nav-item {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        text-align: left;
+        padding: 0.65rem 0.9rem;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-muted);
+        font-family: 'Clash Display', sans-serif;
+        font-size: 0.95rem;
+        cursor: pointer;
+        transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    .settings-nav-item:hover {
+        background-color: var(--card-bg);
+        color: var(--text-main);
+    }
+
+    .settings-nav-item.active {
+        background-color: #000000;
+        color: #ffffff;
+    }
+
+    .settings-panel {
+        display: none;
+        flex-direction: column;
+        width: 100%;
+        max-width: 560px;
+    }
+
+    .settings-panel.active {
+        display: flex;
+    }
+
+    .settings-placeholder {
+        margin-top: clamp(1.5rem, 4vh, 2.5rem);
+        padding: clamp(2rem, 6vh, 3rem) 1.5rem;
+        border: 1px dashed var(--border);
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.35rem;
+        text-align: center;
+    }
+
+    @keyframes settings-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @keyframes settings-pulse {
+
+        0%,
+        100% {
+            opacity: 0.35;
+        }
+
+        50% {
+            opacity: 0.7;
+        }
+    }
+
+    .settings-spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--border);
+        border-top-color: var(--text-main);
+        border-radius: 50%;
+        animation: settings-spin 0.7s linear infinite;
+        flex-shrink: 0;
+    }
+
+    .settings-skeleton-card {
+        height: 68px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background-color: var(--card-bg);
+        animation: settings-pulse 1.4s ease-in-out infinite;
+    }
+
+    .settings-model-row,
+    .settings-provider-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: transparent;
+        gap: 1rem;
+    }
+
+    .settings-pill-btn {
+        background: transparent;
+        border: 1px solid var(--border);
+        padding: 0.4rem 0.9rem;
+        border-radius: 9999px;
+        font-family: 'Clash Display', sans-serif;
+        font-size: 0.85rem;
+        cursor: pointer;
+        color: var(--text-main);
+        transition: background-color 0.2s ease;
+        white-space: nowrap;
+    }
+
+    .settings-pill-btn:hover:not(:disabled) {
+        background-color: var(--card-bg);
+    }
+
+    .settings-pill-btn:disabled {
+        cursor: default;
+        opacity: 0.6;
+    }
+
+    .settings-pill-btn.danger {
+        border-color: #dc2626;
+        color: #dc2626;
+    }
+
+    .settings-pill-btn.danger:hover:not(:disabled) {
+        background-color: rgba(220, 38, 38, 0.08);
+    }
+
+    .settings-provider-form {
+        display: none;
+        margin-top: 0.75rem;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+
+    .settings-provider-form.open {
+        display: flex;
+    }
+
+    .settings-key-input {
+        flex: 1;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.65rem 0.9rem;
+        color: var(--text-main);
+        font-family: 'Clash Display', sans-serif;
+        font-size: 0.9rem;
+        outline: none;
+        transition: border-color 0.2s ease;
+    }
+
+    .settings-key-input:focus {
+        border-color: var(--text-main);
+    }
+
+    .settings-pref-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1.5rem;
+        padding: 1rem;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+    }
+
+    .settings-switch {
+        position: relative;
+        display: inline-block;
+        width: 44px;
+        height: 24px;
+        flex-shrink: 0;
+    }
+
+    .settings-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .settings-switch-track {
+        position: absolute;
+        inset: 0;
+        background-color: var(--border);
+        border-radius: 9999px;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .settings-switch-track::before {
+        content: '';
+        position: absolute;
+        height: 18px;
+        width: 18px;
+        left: 3px;
+        top: 3px;
+        background-color: #ffffff;
+        border-radius: 50%;
+        transition: transform 0.2s ease;
+    }
+
+    .settings-switch input:checked+.settings-switch-track {
+        background-color: #000000;
+    }
+
+    .settings-switch input:checked+.settings-switch-track::before {
+        transform: translateX(20px);
+    }
+
+    .settings-switch input:disabled+.settings-switch-track {
+        opacity: 0.5;
+        cursor: default;
+    }
+</style>
+
+<div style="display: flex; width: 100%; min-height: 100vh;">
+    <!-- Left nav -->
+    <div
+        style="width: 240px; flex-shrink: 0; border-right: 1px solid var(--border); padding: clamp(1.5rem, 4vh, 2rem) 1rem; display: flex; flex-direction: column; gap: 1.75rem; background-color: var(--bg-color); height: 100vh; box-sizing: border-box;">
+        <div>
+            <a href="/"
+                style="display: inline-flex; align-items: center; gap: 0.4rem; color: var(--text-muted); text-decoration: none; font-family: 'Inter', sans-serif; font-size: 0.8rem; margin-bottom: 1rem;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path d="m15 18-6-6 6-6" />
+                </svg>
+                Back
+            </a>
+            <h3
+                style="font-family: 'Clash Display', sans-serif; font-size: clamp(1.2rem, 3vh, 1.5rem); font-weight: 500; color: var(--text-main); margin: 0; padding: 0 0.9rem;">
+                Settings</h3>
+        </div>
+
+        <nav style="display: flex; flex-direction: column; gap: 0.25rem;">
+            <button class="settings-nav-item" data-section="profile">Profile</button>
+            <button class="settings-nav-item" data-section="preferences">Preferences</button>
+            <button class="settings-nav-item active" data-section="local">Local Models</button>
+            <button class="settings-nav-item" data-section="cloud">Cloud Models</button>
+        </nav>
+    </div>
+
+    <!-- Content -->
+    <div style="flex: 1; display: flex; justify-content: center; overflow-y: auto; background-color: var(--bg-color);">
+        <div style="width: 100%; max-width: 640px; padding: clamp(2rem, 6vh, 3.5rem) 2rem 3rem;">
+
+            <!-- Profile -->
+            <div id="panel-profile" class="settings-panel">
+                <h2 class="onboarding-heading" style="font-size: clamp(1.4rem, 3.5vh, 1.8rem); margin: 0;">Profile</h2>
+                <p
+                    style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0 0 0; line-height: 1.5;">
+                    The details you gave when you set Zyros up.</p>
+
+                <div id="profile-card"
+                    style="display: none; margin-top: clamp(1.5rem, 4vh, 2rem); padding: 1.25rem; border: 1px solid var(--border); border-radius: 12px; flex-direction: column; gap: 1.25rem;">
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <img id="profile-avatar" src="/assets/profile/profile-1.jpg" alt="Profile"
+                            style="width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border);">
+                        <div style="display: flex; flex-direction: column; gap: 0.2rem;">
+                            <span id="profile-name"
+                                style="font-family: 'Clash Display', sans-serif; font-size: 1.15rem; font-weight: 500; color: var(--text-main);"></span>
+                            <span id="profile-role"
+                                style="font-family: 'Inter', sans-serif; font-size: 0.85rem; color: var(--text-muted);"></span>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;">
+                            <span
+                                style="font-family: 'Inter', sans-serif; font-size: 0.8rem; color: var(--text-muted);">Linux
+                                experience</span>
+                            <span id="profile-experience"
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.9rem; color: var(--text-main);"></span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 1rem;">
+                            <span
+                                style="font-family: 'Inter', sans-serif; font-size: 0.8rem; color: var(--text-muted);">Using
+                                Zyros since</span>
+                            <span id="profile-created"
+                                style="font-family: 'Clash Display', sans-serif; font-size: 0.9rem; color: var(--text-main);"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <p id="profile-error"
+                    style="display:none; color:#dc2626; margin: 1.5rem 0 0 0; font-size: 0.85rem;"></p>
+            </div>
+
+            <!-- Preferences -->
+            <div id="panel-preferences" class="settings-panel">
+                <h2 class="onboarding-heading" style="font-size: clamp(1.4rem, 3.5vh, 1.8rem); margin: 0;">Preferences
+                </h2>
+                <p
+                    style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0 0 0; line-height: 1.5;">
+                    How Zyros behaves while it works.</p>
+
+                <div class="settings-pref-row" style="margin-top: clamp(1.5rem, 4vh, 2rem);">
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                        <span
+                            style="font-family: 'Clash Display', sans-serif; font-size: 1.05rem; font-weight: 500; color: var(--text-main);">Always
+                            approve commands</span>
+                        <span
+                            style="font-family: 'Inter', sans-serif; font-size: 0.8rem; color: var(--text-muted); line-height: 1.45;">When
+                            on, Zyros runs the commands it proposes without asking each time. When off, it asks you in
+                            chat every time.</span>
+                    </div>
+                    <label class="settings-switch">
+                        <input type="checkbox" id="pref-always-approve" disabled>
+                        <span class="settings-switch-track"></span>
+                    </label>
+                </div>
+
+                <p
+                    style="font-family: 'Inter', sans-serif; font-size: 0.78rem; color: var(--text-muted); margin: 0.75rem 0 0 0; line-height: 1.5;">
+                    Destructive commands are refused either way — this only decides whether Zyros stops to ask.</p>
+
+                <p id="pref-error" style="display:none; color:#dc2626; margin: 1rem 0 0 0; font-size: 0.85rem;"></p>
+            </div>
+
+            <!-- Local Models -->
+            <div id="panel-local" class="settings-panel active">
+                <h2 class="onboarding-heading" style="font-size: clamp(1.4rem, 3.5vh, 1.8rem); margin: 0;">Local Models
+                </h2>
+                <p
+                    style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0 0 0; line-height: 1.5;">
+                    Models that run on this machine through Ollama.</p>
+
+                <div id="local-env-banner"
+                    style="display:none; margin-top: 1.5rem; padding: 0.75rem 1rem; border-radius: 8px; background-color: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); flex-direction: column; gap: 0.5rem;">
+                    <span id="local-env-detail"
+                        style="font-family: 'Clash Display', sans-serif; font-size: 0.9rem; color: var(--text-main);"></span>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <div class="settings-spinner"></div>
+                        <span
+                            style="font-family: 'Inter', sans-serif; font-size: 0.78rem; color: var(--text-muted);">Checking
+                            again…</span>
+                    </div>
+                </div>
+
+                <p id="local-installed-error"
+                    style="display:none; color:#dc2626; margin: 1rem 0 0 0; font-size: 0.85rem;"></p>
+
+                <div style="margin-top: clamp(1.5rem, 4vh, 2rem);">
+                    <h4
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1rem; font-weight: 500; color: var(--text-main); margin: 0 0 0.75rem 0;">
+                        Installed</h4>
+                    <div id="installed-models-loader" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <div class="settings-skeleton-card"></div>
+                        <div class="settings-skeleton-card"></div>
+                    </div>
+                    <div id="installed-models-list" style="display: none; flex-direction: column; gap: 0.75rem;"></div>
+                    <p id="installed-models-empty"
+                        style="display:none; font-family: 'Inter', sans-serif; font-size: 0.85rem; color: var(--text-muted); margin: 0;">
+                        No models installed yet.</p>
+                </div>
+
+                <div style="margin-top: clamp(1.5rem, 4vh, 2rem);">
+                    <h4
+                        style="font-family: 'Clash Display', sans-serif; font-size: 1rem; font-weight: 500; color: var(--text-main); margin: 0 0 0.25rem 0;">
+                        Suggested for your hardware</h4>
+                    <p id="suggested-models-blurb"
+                        style="font-family: 'Inter', sans-serif; font-size: 0.78rem; color: var(--text-muted); margin: 0 0 0.75rem 0;">
+                    </p>
+                    <div id="suggested-models-loader" style="display: flex; flex-direction: column; gap: 0.75rem;">
+                        <div class="settings-skeleton-card"></div>
+                        <div class="settings-skeleton-card"></div>
+                    </div>
+                    <div id="suggested-models-list" style="display: none; flex-direction: column; gap: 0.75rem;"></div>
+                    <p id="suggested-models-note"
+                        style="display:none; font-family: 'Inter', sans-serif; font-size: 0.8rem; color: var(--text-muted); margin: 0.5rem 0 0 0; line-height: 1.5;">
+                    </p>
+                </div>
+
+                <p id="local-download-error" style="display:none; color:#dc2626; margin: 1rem 0 0 0; font-size: 0.85rem;">
+                </p>
+            </div>
+
+            <!-- Cloud Models -->
+            <div id="panel-cloud" class="settings-panel">
+                <h2 class="onboarding-heading" style="font-size: clamp(1.4rem, 3.5vh, 1.8rem); margin: 0;">Cloud Models
+                </h2>
+                <p
+                    style="font-family: 'Playfair Display', serif; font-style: italic; font-size: 0.9rem; color: var(--text-muted); margin: 0.5rem 0 0 0; line-height: 1.5;">
+                    Bring your own key for hosted providers.</p>
+
+                <div id="cloud-provider-loader"
+                    style="margin-top: clamp(1.5rem, 4vh, 2rem); display: flex; flex-direction: column; gap: 0.75rem;">
+                    <div class="settings-skeleton-card"></div>
+                    <div class="settings-skeleton-card"></div>
+                    <div class="settings-skeleton-card"></div>
+                    <div class="settings-skeleton-card"></div>
+                </div>
+                <div id="cloud-provider-list"
+                    style="display: none; margin-top: clamp(1.5rem, 4vh, 2rem); flex-direction: column; gap: 0.75rem;">
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script src="/js/settings.js"></script>
