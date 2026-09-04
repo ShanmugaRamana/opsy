@@ -790,40 +790,31 @@ function renderTurnFailure(data) {
     document.querySelector('.main-content').classList.add('is-chatting');
 
     const card = document.createElement('div');
-    card.style.cssText = 'font-family: \'Inter\', sans-serif; font-size: 0.8rem; line-height: 1.45; padding: 0.7rem 0.9rem; margin: 0.25rem 0; border: 1px solid var(--border); border-left: 3px solid #c0392b; border-radius: 8px; background: var(--card-bg);';
+    card.style.cssText = 'display: flex; justify-content: space-between; align-items: center; font-family: \'Inter\', sans-serif; font-size: 0.8rem; line-height: 1.45; padding: 0.7rem 0.9rem; margin: 0.25rem 0; border: 1px solid var(--border); border-left: 3px solid #c0392b; border-radius: 8px; background: var(--card-bg); gap: 1rem;';
+
+    const content = document.createElement('div');
+    content.style.cssText = 'display: flex; flex-direction: column; gap: 0.15rem; flex: 1;';
 
     const heading = document.createElement('div');
-    heading.style.cssText = 'font-weight: 600; color: #c0392b; margin-bottom: 0.25rem;';
+    heading.style.cssText = 'font-weight: 600; color: #c0392b;';
     heading.innerText = title;
-    card.appendChild(heading);
+    content.appendChild(heading);
 
     const body = document.createElement('div');
     body.style.cssText = 'opacity: 0.8;';
     body.innerText = hint;
-    card.appendChild(body);
-
-    if (data.detail) {
-        const details = document.createElement('details');
-        details.style.cssText = 'margin-top: 0.45rem; font-size: 0.72rem;';
-        const summary = document.createElement('summary');
-        summary.style.cssText = 'cursor: pointer; opacity: 0.65;';
-        summary.innerText = 'Technical details';
-        details.appendChild(summary);
-
-        const raw = document.createElement('div');
-        raw.style.cssText = 'font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; opacity: 0.75; margin-top: 0.3rem; padding: 0.4rem 0.5rem; border-radius: 6px; background: var(--bg-color);';
-        raw.innerText = String(data.detail);
-        details.appendChild(raw);
-        card.appendChild(details);
-    }
+    content.appendChild(body);
+    
+    card.appendChild(content);
 
     if (retryable && message) {
         const actions = document.createElement('div');
-        actions.style.cssText = 'display: flex; align-items: center; gap: 0.5rem; margin-top: 0.55rem;';
+        actions.style.cssText = 'display: flex; align-items: center; flex-shrink: 0;';
 
         const retry = document.createElement('button');
         retry.innerText = 'Retry';
-        retry.style.cssText = 'padding: 0.3rem 0.8rem; border-radius: 6px; border: none; background: var(--text-main); color: var(--bg-color); cursor: pointer; font-family: inherit; font-size: 0.75rem;';
+        retry.style.cssText = 'padding: 0.4rem 0.9rem; border-radius: 6px; border: none; background: var(--text-main); color: var(--bg-color); cursor: pointer; font-family: inherit; font-size: 0.75rem; font-weight: 500; white-space: nowrap; transition: opacity 0.2s;';
+        
         const reset = () => {
             retry.disabled = false;
             retry.style.opacity = '1';
@@ -836,12 +827,10 @@ function renderTurnFailure(data) {
             retry.style.opacity = '0.5';
             retry.style.cursor = 'default';
             retry.innerText = 'Sending again...';
-            // The card survives until the retried turn actually starts, so a click that never reaches
-            // the backend leaves the failure on screen - and `reset` puts the button back when the
-            // send was refused rather than attempted.
             retryingCard = { card, reset };
             sendTurn(message, { isRetry: true });
         });
+        
         actions.appendChild(retry);
         card.appendChild(actions);
     }
